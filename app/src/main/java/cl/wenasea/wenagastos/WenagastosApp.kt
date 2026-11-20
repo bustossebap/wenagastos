@@ -6,10 +6,13 @@ import cl.wenasea.wenagastos.capture.CaptureEngine
 import cl.wenasea.wenagastos.data.Seeder
 import cl.wenasea.wenagastos.data.local.WenagastosDatabase
 import cl.wenasea.wenagastos.data.repo.AccountRepository
+import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.importexport.DocumentFiles
+import cl.wenasea.wenagastos.ui.lock.AppLockState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +24,7 @@ import kotlinx.coroutines.launch
  */
 class AppContainer(application: Application) {
 
-    private val database: WenagastosDatabase = Room.databaseBuilder(
+    val database: WenagastosDatabase = Room.databaseBuilder(
         application,
         WenagastosDatabase::class.java,
         WenagastosDatabase.NAME,
@@ -34,6 +37,21 @@ class AppContainer(application: Application) {
     val transactions = TransactionRepository(database.transactionDao())
     val captureLogs = CaptureLogRepository(database.captureLogDao())
     val rules = MerchantRuleRepository(database.merchantRuleDao(), categories)
+
+    /** Exportar y respaldar: la foto de las cuatro tablas y la restauración en bloque. */
+    val backup = BackupRepository(
+        database,
+        database.accountDao(),
+        database.categoryDao(),
+        database.transactionDao(),
+        database.merchantRuleDao(),
+    )
+
+    /** Escribe y lee el archivo que el usuario elige en el selector del sistema. */
+    val files = DocumentFiles(application.contentResolver)
+
+    /** Bloqueo al abrir: estado en memoria, valor inicial en `SharedPreferences`. */
+    val appLock = AppLockState(application)
 
     /** Motor que traduce notificaciones del banco en movimientos. */
     val capture = CaptureEngine(transactions, accounts, categories, rules, captureLogs)

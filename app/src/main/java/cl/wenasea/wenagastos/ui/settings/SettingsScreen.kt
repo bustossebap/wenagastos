@@ -148,6 +148,16 @@ fun SettingsScreen(
         }
 
         item {
+            DataCard(
+                state = state,
+                onExportCsv = viewModel::exportCsv,
+                onExportJson = viewModel::exportJson,
+                onCreateBackup = viewModel::createBackup,
+                onRestoreBackup = viewModel::restoreBackup,
+            )
+        }
+
+        item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     SectionHeader(
@@ -253,6 +263,10 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        item {
+            LockCard(lock = container.appLock)
         }
 
         item {

@@ -14,7 +14,7 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
    Motor de reglas de comercio → regla aprendida del usuario, si no la semilla del catálogo
         │
         ▼
-   Room (SQLite cifrado) → Dashboard · Reportes · Export
+   Room (SQLite privado) → Dashboard · Reportes · Export · Respaldo
 ```
 
 ## Estado
@@ -26,9 +26,9 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 | 2 | Captura por notificaciones + diagnóstico | ✅ |
 | 3 | Reglas y aprendizaje | ✅ |
 | 4 | Transferencias propias, reportes, presupuestos | ✅ |
-| 5 | Export, backup cifrado (SQLCipher), biometría | ⬜ |
+| 5 | Export CSV/JSON, respaldo cifrado con contraseña, bloqueo al abrir | ✅ |
 
-## Qué hace hoy (Fases 1 a 4)
+## Qué hace hoy (Fases 1 a 5)
 
 - **Captura automática**: un `NotificationListenerService` local escucha solo los paquetes de Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet; el resto se ignora sin guardar nada.
 - **Un parser por banco**: obtiene monto en CLP, comercio o destinatario, últimos 4 dígitos, si la tarjeta es de crédito o débito, y si la plata entra o sale. Los avisos de saldo, claves, promociones y resúmenes vacíos se descartan con el motivo anotado.
@@ -47,9 +47,19 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 - **Presupuestos**: en Reportes se le pone un tope mensual a cualquier categoría de gasto (Guardar / Quitar / Cancelar), y la tarjeta muestra *Presupuestado vs gastado* con el total y cada categoría ordenada por avance. El semáforo es **OK** bajo el 80 %, **ámbar** desde el 80 % y **rojo** al llegar al 100 % ("Te quedan $X" / "Te pasaste $X"). El presupuesto vive en `categories.monthlyBudget`, que existe desde la versión 1 de la base: **no hubo migración** (la base sigue en v4).
 - **Aviso de presupuesto en Inicio**: cuando alguna categoría del mes alcanza el 80 % del tope aparece la tarjeta *Presupuestos* con la barra y lo que queda, y un atajo a Reportes. El aviso se calcula en vivo (no se guarda estado), así que editar o borrar un movimiento lo corrige al instante, y si no hay presupuestos alcanzados la tarjeta no ocupa espacio.
 - **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso; en ese caso la cuenta se elige dos veces (**origen** y **destino**) y aparece la casilla de la otra pata. Se puede eliminar al editar.
-- **Ajustes**: permiso de captura, cuentas (crear, editar, archivar y los números que aparecen en sus avisos), categorías y nota de privacidad.
+- **Ajustes**: permiso de captura, cuentas (crear, editar, archivar y los números que aparecen en sus avisos), **Datos** (exportar, respaldar y restaurar), **bloqueo al abrir**, categorías y nota de privacidad.
 - Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
-- Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher se suma en la Fase 5, previo a los respaldos.
+- Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher queda para la Fase 5.1, ahora que el respaldo cifrado ya permite volver atrás si algo sale mal.
+
+### Fase 5: los datos salen solo cuando el usuario quiere
+
+- **Datos** (Ajustes → tarjeta *Datos*): cuatro botones y un aviso con el resultado. Todo pasa por el **selector de archivos de Android** (SAF): la app no pide permiso de almacenamiento ni escribe fuera de la carpeta que el usuario elige, y no adquiere ninguna vía para sacar datos sola.
+- **Exportar CSV**: una fila por movimiento con fecha ISO (`2026-11-20`, ordena sola), hora, monto entero, `tipo` (Gasto / Ingreso / Traspaso), cuenta, cuenta de destino (en los traspasos), categoría, comercio, estado, origen, notas y texto del aviso. Va con **BOM UTF-8** para que Excel muestre `Súper` y no `SÃºper`, comillas dobles según RFC 4180 cuando el campo trae coma o salto de línea, y un apóstrofo delante de lo que empiece con `=`, `+`, `-` o `@` para que un nombre de comercio no se ejecute como fórmula.
+- **Exportar JSON**: `{"app":"Wenagastos","documento":"movimientos","version":1,"generadoEn":…,"resumen":{…},"movimientos":[…]}` con los nombres ya resueltos y los campos vacíos omitidos.
+- **Crear respaldo**: archivo `wenagastos-AAAA-MM-DD.wena` con **todo** (cuentas, categorías, reglas aprendidas y movimientos, con los ids originales), cifrado con **AES-256-GCM** y una llave derivada de la contraseña del usuario con **PBKDF2-HMAC-SHA256, 120.000 vueltas** y sal de 16 bytes al azar. Cabecera en claro de 40 bytes (`WENABK1` · versión · iteraciones · sal · IV) para poder derivar la llave; sin la contraseña el resto es ruido. La contraseña se pide dos veces al crear (una errata deja el archivo inservible para siempre), mínimo 8 caracteres, y no se guarda en ninguna parte: `SettingsViewModel` la borra de memoria apenas termina de cifrar.
+- **Restaurar**: se elige el `.wena`, se escribe la contraseña y se confirma con un botón rojo, porque **reemplaza todo** lo que hay en el teléfono (la app no guarda copia previa). Antes de borrar nada se valida el archivo entero: si un movimiento apunta a una cuenta que no viene, si hay ids repetidos o si un monto es inválido, no se toca la base. La restauración corre en un solo `withTransaction` con las filas y sus ids originales, así un traspaso sigue apuntando a su otra pata y una regla a su categoría; si algo falla a mitad de camino, Room revierte y la base queda como estaba.
+- **Bloqueo al abrir**: interruptor en Ajustes (solo si el teléfono tiene PIN o huella). Al abrir, una pantalla sin datos tapa la app entera; **Desbloquear** muestra el `BiometricPrompt` del sistema (huella, rostro o PIN en un solo diálogo, Android 11+) o la pantalla de bloqueo del sistema en Android 10 y anteriores. Si la app estuvo **más de un minuto** en segundo plano se vuelve a pedir (abrir el selector de archivos no cuenta como salir). Si el teléfono pierde su PIN, la app deja pasar y lo dice: el bloqueo no cifra la base, solo es una cortina para quien tome el teléfono desbloqueado.
+- **Sin dependencias nuevas**: JSON, CSV, PBKDF2 y AES-GCM con la biblioteca estándar (`kotlin`, `javax.crypto`), y el diálogo biométrico del sistema en vez de `androidx.biometric`. El formato del respaldo se prueba en la JVM.
 
 ## Stack
 
@@ -67,7 +77,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
-./gradlew :app:testDebugUnitTest      # 83 pruebas: parsers, montos, categorías, traspasos, reglas, motor y reportes
+./gradlew :app:testDebugUnitTest      # 118 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes y export/respaldo
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
 
@@ -98,6 +108,33 @@ Ojo con el `$`: hay que escaparlo dentro de la comilla que recibe el teléfono, 
 come y el aviso llega cortado (`text=Compraste`), lo que termina como *no es un movimiento* en el
 diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) están cubiertos por los tests.
 
+### Probar export y respaldo
+
+En el emulador (o en el teléfono) se hace a mano, en **Ajustes → Datos**:
+
+1. **Exportar CSV / JSON** y guardar en *Descargas*; con `adb` se revisa el contenido:
+
+   ```bash
+   adb shell ls -l /sdcard/Download/
+   adb shell cat /sdcard/Download/wenagastos-AAAA-MM-DD.csv | head
+   ```
+
+2. **Crear respaldo** con una contraseña de 8+ caracteres y guardarlo; el archivo debe medir más que el JSON (lleva cabecera y sello de GCM) y no debe contener texto legible:
+
+   ```bash
+   adb shell head -c 40 /sdcard/Download/wenagastos-AAAA-MM-DD.wena | xxd | head -2   # WENABK1 + versión + iteraciones
+   adb shell grep -c Wenagastos /sdcard/Download/wenagastos-AAAA-MM-DD.wena            # 0
+   ```
+
+3. **Restaurar** primero con una contraseña equivocada (tiene que aparecer *La contraseña no es la de este respaldo* y la base quedar intacta) y después con la correcta. La forma de comprobarlo sin la UI es comparar la base antes y después:
+
+   ```bash
+   adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/antes.db
+   # ... restaurar ...
+   adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/despues.db
+   sqlite3 /tmp/despues.db 'pragma user_version; select count(*) from transactions; select id, accountId, amount from transactions order by id;'
+   ```
+
 ## Privacidad
 
 - Sin permiso `INTERNET`: la app no puede enviar datos a ningún lado.
@@ -109,7 +146,7 @@ diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) est
 - Paquetes: `cl.wenasea.wenagastos.<feature>` (`ui`, `data`, `domain`, `capture`, `importexport`).
 - Montos en `Long` en pesos chilenos, sin decimales (`TransactionEntity.amount`).
 - Fechas: `epoch millis` en zona `America/Santiago`; se formatean con `java.time`.
-- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4. La **versión 4 sigue siendo la última**: los presupuestos usan `categories.monthlyBudget`, que existe desde la versión 1.
+- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4. La **versión 4 sigue siendo la última**: los presupuestos usan `categories.monthlyBudget`, que existe desde la versión 1, y la Fase 5 (export, respaldo y bloqueo) no toca el esquema. El respaldo anota en `schema` la versión con la que se escribió.
 - La normalización de texto (`TextNorm`) vive en `domain`, porque la usan tanto `capture` como los repositorios.
 
 ## Problemas conocidos
@@ -124,4 +161,5 @@ diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) est
 
 - **Calibrar con avisos reales** (en curso): el motor ya está cerrado y probado con avisos sintéticos, pero falta ver los textos reales del A34. Para cada banco (Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet) se compara el texto crudo con lo que se parseó en **Diagnóstico** y se ajustan `BankSource.packages` y los patrones de `NotifParser` / `AmountExtractor` / `MerchantExtractor` / `CardDetector`.
   Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
-- **Fase 5 — export y respaldo**: exportar CSV/JSON a un archivo que el usuario elige, backup cifrado con SQLCipher y biometría para abrir la app.
+- **Fase 5.1 — SQLCipher**: cifrar la base en reposo. Va después del respaldo a propósito: migrar una base real con datos exige un respaldo cifrado que se pueda restaurar si algo sale mal. Requiere `net.zetetic:sqlcipher-android`, migrar la base existente con `sqlcipher_export()` y subir el peso del APK; la versión de esquema de Room no cambia.
+- **Recordatorios de respaldo**: un aviso (sin permisos nuevos) cuando pasan 30 días desde el último respaldo, usando la fecha que se guarde en `SharedPreferences`.

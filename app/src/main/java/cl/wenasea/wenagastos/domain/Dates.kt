@@ -50,6 +50,19 @@ object Dates {
     fun fullDateLabel(epochMillis: Long): String =
         toLocalDate(epochMillis).format(DateTimeFormatter.ofPattern("dd-MM-yyyy", locale))
 
+    /** "2026-11-20": ISO, para que la planilla ordene solo y no confunda día con mes. */
+    fun isoDate(epochMillis: Long): String = toLocalDate(epochMillis).toString()
+
+    /** "10:22": hora de Chile, sin segundos. */
+    fun clockLabel(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
+        .atZone(zone)
+        .format(DateTimeFormatter.ofPattern("HH:mm", locale))
+
+    /** "2026-11-20T10:22:33-03:00": marca de tiempo completa, para los archivos exportados. */
+    fun isoDateTime(epochMillis: Long): String = Instant.ofEpochMilli(epochMillis)
+        .atZone(zone)
+        .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME)
+
     /** El DatePicker de Material 3 trabaja con medianoche UTC: hay que traducir ambos sentidos. */
     fun toPickerMillis(epochMillis: Long): Long =
         toLocalDate(epochMillis).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()

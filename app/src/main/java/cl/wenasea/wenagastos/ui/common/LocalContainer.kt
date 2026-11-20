@@ -39,7 +39,13 @@ object VmFactories {
 
     fun settings(container: AppContainer) = viewModelFactory {
         initializer {
-            SettingsViewModel(container.accounts, container.categories, container.captureLogs)
+            SettingsViewModel(
+                container.accounts,
+                container.categories,
+                container.captureLogs,
+                container.backup,
+                container.files,
+            )
         }
     }
 

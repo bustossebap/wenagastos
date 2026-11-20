@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.ui.settings
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
@@ -7,11 +8,21 @@ import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.repo.AccountRepository
+import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.domain.normalizeNumbers
 import cl.wenasea.wenagastos.domain.numbers
 import cl.wenasea.wenagastos.domain.parseNumbers
+import cl.wenasea.wenagastos.importexport.Backup
+import cl.wenasea.wenagastos.importexport.BackupCrypto
+import cl.wenasea.wenagastos.importexport.BackupException
+import cl.wenasea.wenagastos.importexport.DocumentFiles
+import cl.wenasea.wenagastos.importexport.Export
+import cl.wenasea.wenagastos.importexport.Json
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class SettingsUiState(
     val accounts: List<AccountEntity> = emptyList(),
@@ -29,6 +41,11 @@ data class SettingsUiState(
     val error: String? = null,
     /** Se pone en true cuando una acción terminó bien; la pantalla cierra el diálogo. */
     val saved: Boolean = false,
+    /** Último aviso de la tarjeta "Datos": export listo, respaldo restaurado o el problema. */
+    val notice: String? = null,
+    val noticeIsError: Boolean = false,
+    /** Hay un archivo en camino: los botones de la tarjeta "Datos" se desactivan. */
+    val busy: Boolean = false,
 ) {
     fun movementCount(account: AccountEntity): Int = movementCounts[account.id] ?: 0
 }
@@ -37,6 +54,8 @@ class SettingsViewModel(
     private val accounts: AccountRepository,
     categories: CategoryRepository,
     captureLogs: CaptureLogRepository,
+    private val backup: BackupRepository,
+    private val files: DocumentFiles,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(SettingsUiState())
@@ -134,6 +153,109 @@ class SettingsViewModel(
     fun clearError() {
         local.update { it.copy(error = null) }
     }
+
+    /** Exporta los movimientos a CSV (planilla) o JSON (programas). */
+    fun exportCsv(uri: Uri) = runTask {
+        val data = backup.snapshot()
+        val text = Export.transactionsCsv(
+            data.transactions,
+            data.accounts.associateBy { it.id },
+            data.categories.associateBy { it.id },
+        )
+        files.writeText(uri, text)
+        "CSV listo con ${plural(data.transactions.size, "movimiento", "movimientos")}."
+    }
+
+    fun exportJson(uri: Uri) = runTask {
+        val data = backup.snapshot()
+        val text = Export.transactionsJson(
+            data.transactions,
+            data.accounts.associateBy { it.id },
+            data.categories.associateBy { it.id },
+        )
+        files.writeText(uri, text)
+        "JSON listo con ${plural(data.transactions.size, "movimiento", "movimientos")}."
+    }
+
+    /**
+     * Respaldo cifrado con contraseña. La clave no se guarda en ninguna parte: si se olvida, el
+     * archivo no se puede abrir. Por eso el mínimo de caracteres y el aviso en pantalla.
+     */
+    fun createBackup(uri: Uri, password: String) {
+        if (password.length < BackupCrypto.MIN_PASSWORD) {
+            local.update {
+                it.copy(
+                    notice = "La contraseña necesita al menos ${BackupCrypto.MIN_PASSWORD} caracteres",
+                    noticeIsError = true,
+                )
+            }
+            return
+        }
+        runTask {
+            val data = backup.snapshot()
+            val plain = Backup.encode(data, BackupRepository.SCHEMA).toByteArray(Charsets.UTF_8)
+            val chars = password.toCharArray()
+            try {
+                files.write(uri, BackupCrypto.encrypt(plain, chars))
+            } finally {
+                // La contraseña no se queda en memoria más de lo necesario.
+                chars.fill('\u0000')
+            }
+            "Respaldo listo con ${plural(data.transactions.size, "movimiento", "movimientos")}. " +
+                "Guárdalo fuera del teléfono: sin la contraseña no hay forma de abrirlo."
+        }
+    }
+
+    /** Reemplaza todo con el contenido del respaldo. La pantalla pide confirmación antes. */
+    fun restoreBackup(uri: Uri, password: String) = runTask {
+        val envelope = files.read(uri)
+        if (!BackupCrypto.isBackup(envelope)) {
+            throw BackupException("El archivo no es un respaldo de Wenagastos")
+        }
+        val chars = password.toCharArray()
+        val text = try {
+            String(BackupCrypto.decrypt(envelope, chars), Charsets.UTF_8)
+        } finally {
+            chars.fill('\u0000')
+        }
+        val data = Backup.decode(text)
+        backup.restore(data)
+        "Restaurado: ${plural(data.transactions.size, "movimiento", "movimientos")} y " +
+            "${plural(data.accounts.size, "cuenta", "cuentas")}."
+    }
+
+    fun clearNotice() {
+        local.update { it.copy(notice = null, noticeIsError = false) }
+    }
+
+    /**
+     * Todo el trabajo de archivo corre en IO y termina en un aviso, nunca en una excepción que
+     * tumbe la pantalla: si el selector devolvió una URI que ya no existe, se dice y se sigue.
+     */
+    private fun runTask(block: suspend () -> String) {
+        viewModelScope.launch {
+            local.update { it.copy(busy = true, notice = null, noticeIsError = false) }
+            val (message, isError) = try {
+                withContext(Dispatchers.IO) { block() } to false
+            } catch (e: BackupException) {
+                (e.message ?: "No se pudo leer el respaldo") to true
+            } catch (e: Json.JsonFormatException) {
+                (e.message ?: "El JSON está dañado") to true
+            } catch (e: IOException) {
+                ("No se pudo leer o escribir el archivo: ${e.message}") to true
+            } catch (e: SecurityException) {
+                ("Android no dio permiso sobre ese archivo") to true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                ("No se pudo completar: ${e.message ?: e::class.java.simpleName}") to true
+            }
+            local.update { it.copy(busy = false, notice = message, noticeIsError = isError) }
+        }
+    }
+
+    private fun plural(count: Int, singular: String, plural: String): String =
+        if (count == 1) "1 $singular" else "$count $plural"
 
     /** La pantalla ya cerró el diálogo por haber guardado. */
     fun consumeSaved() {

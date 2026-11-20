@@ -25,6 +25,10 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id ASC")
     suspend fun getAllActive(): List<AccountEntity>
 
+    /** Todas, incluidas las archivadas: es lo que viaja en el respaldo. */
+    @Query("SELECT * FROM accounts ORDER BY id ASC")
+    suspend fun getAll(): List<AccountEntity>
+
     /** Conteo de movimientos por cuenta; una cuenta con movimientos se archiva, no se borra. */
     @Query("SELECT accountId, COUNT(*) AS total FROM transactions GROUP BY accountId")
     fun observeMovementCounts(): Flow<List<AccountMovementCount>>
@@ -65,4 +69,8 @@ interface AccountDao {
      */
     @Query("DELETE FROM accounts WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** Vacía la tabla. Solo lo usa la restauración de un respaldo, dentro de una transacción. */
+    @Query("DELETE FROM accounts")
+    suspend fun deleteAll()
 }

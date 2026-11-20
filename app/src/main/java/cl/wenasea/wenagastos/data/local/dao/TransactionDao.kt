@@ -95,6 +95,10 @@ interface TransactionDao {
     @Insert
     suspend fun insert(transaction: TransactionEntity): Long
 
+    /** Restauración: los movimientos llegan con su id original, así se conservan los traspasos. */
+    @Insert
+    suspend fun insertAll(transactions: List<TransactionEntity>)
+
     @Update
     suspend fun update(transaction: TransactionEntity)
 
@@ -103,4 +107,12 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    /** Todos los movimientos en orden cronológico: es lo que sale en el export y el respaldo. */
+    @Query("SELECT * FROM transactions ORDER BY occurredAt ASC, id ASC")
+    suspend fun getAll(): List<TransactionEntity>
+
+    /** Vacía la tabla. Solo lo usa la restauración de un respaldo, dentro de una transacción. */
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAll()
 }

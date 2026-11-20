@@ -84,6 +84,15 @@ class FakeTransactionDao : TransactionDao {
         return id
     }
 
+    override suspend fun insertAll(transactions: List<TransactionEntity>) {
+        transactions.forEach { insertSync(it) }
+        publish()
+    }
+
+    /** Espeja `ORDER BY occurredAt ASC, id ASC`: el orden en que sale el export. */
+    override suspend fun getAll(): List<TransactionEntity> =
+        rows.values.sortedWith(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
+
     override suspend fun update(transaction: TransactionEntity) {
         rows[transaction.id] = transaction
         publish()
@@ -96,6 +105,11 @@ class FakeTransactionDao : TransactionDao {
 
     override suspend fun deleteById(id: Long) {
         rows.remove(id)
+        publish()
+    }
+
+    override suspend fun deleteAll() {
+        rows.clear()
         publish()
     }
 
@@ -160,6 +174,8 @@ class FakeAccountDao : AccountDao {
     override suspend fun getAllActive(): List<AccountEntity> =
         rows.values.filter { it.isActive }.sortedBy { it.id }
 
+    override suspend fun getAll(): List<AccountEntity> = rows.values.sortedBy { it.id }
+
     override suspend fun findByLast4(last4: String): AccountEntity? = rows.values
         .filter { it.isActive && it.numbers().contains(last4) }
         .minByOrNull { it.id }
@@ -203,6 +219,11 @@ class FakeAccountDao : AccountDao {
         rows.remove(id)
         publish()
     }
+
+    override suspend fun deleteAll() {
+        rows.clear()
+        publish()
+    }
 }
 
 class FakeCategoryDao : CategoryDao {
@@ -238,6 +259,8 @@ class FakeCategoryDao : CategoryDao {
         .filter { !it.isArchived }
         .sortedWith(compareBy<CategoryEntity> { it.kind.name }.thenBy { it.sortOrder }.thenBy { it.id })
 
+    override suspend fun getAll(): List<CategoryEntity> = rows.values.sortedBy { it.id }
+
     override suspend fun getById(id: Long): CategoryEntity? = rows[id]
 
     override suspend fun count(): Int = rows.size
@@ -255,6 +278,11 @@ class FakeCategoryDao : CategoryDao {
 
     override suspend fun update(category: CategoryEntity) {
         rows[category.id] = category
+        publish()
+    }
+
+    override suspend fun deleteAll() {
+        rows.clear()
         publish()
     }
 }
@@ -275,6 +303,8 @@ class FakeMerchantRuleDao : MerchantRuleDao {
 
     override fun observeAll(): Flow<List<MerchantRuleEntity>> = state
 
+    override suspend fun getAll(): List<MerchantRuleEntity> = rows.values.sortedBy { it.id }
+
     override suspend fun find(key: String, direction: String): MerchantRuleEntity? =
         rows.values.firstOrNull { it.merchantKey == key && it.direction.name == direction }
 
@@ -283,6 +313,10 @@ class FakeMerchantRuleDao : MerchantRuleDao {
         rows[id] = rule.copy(id = id)
         publish()
         return id
+    }
+
+    override suspend fun insertAll(rules: List<MerchantRuleEntity>) {
+        rules.forEach { insert(it) }
     }
 
     override suspend fun update(rule: MerchantRuleEntity) {
@@ -296,6 +330,11 @@ class FakeMerchantRuleDao : MerchantRuleDao {
     }
 
     override suspend fun count(): Int = rows.size
+
+    override suspend fun deleteAll() {
+        rows.clear()
+        publish()
+    }
 }
 
 class FakeCaptureLogDao : CaptureLogDao {
