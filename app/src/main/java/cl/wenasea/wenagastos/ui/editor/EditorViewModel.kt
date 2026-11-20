@@ -98,6 +98,8 @@ class EditorViewModel(
             categoryId = categoryId,
             isExpense = direction == Direction.DEBIT,
             status = TransactionStatus.CONFIRMED,
+            // El motivo del "por revisar" lo generó el motor: al guardar, el usuario ya decidió.
+            notes = null,
         )
 
         viewModelScope.launch {

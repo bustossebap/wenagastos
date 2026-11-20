@@ -39,6 +39,10 @@ object Dates {
 
     fun dayLabel(epochMillis: Long): String = dayFormatter.format(toLocalDate(epochMillis))
 
+    fun timeLabel(epochMillis: Long): String =
+        Instant.ofEpochMilli(epochMillis).atZone(zone)
+            .format(DateTimeFormatter.ofPattern("dd-MM HH:mm", locale))
+
     fun fullDateLabel(epochMillis: Long): String =
         toLocalDate(epochMillis).format(DateTimeFormatter.ofPattern("dd-MM-yyyy", locale))
 

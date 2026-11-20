@@ -85,8 +85,10 @@ class LedgerViewModel(
         allAccounts: List<AccountEntity>,
         pending: Int,
     ): LedgerUiState {
+        // Los movimientos "Por revisar" (PENDING) no suman: todavía no se sabe con certeza
+        // con qué cuenta se pagó, así que esperan en la tarjeta "Por revisar" del inicio.
         val counted = monthTransactions.filter {
-            !it.isTransfer && it.status != TransactionStatus.IGNORED
+            it.status == TransactionStatus.CONFIRMED && !it.isTransfer
         }
 
         val expenses = counted.filter { it.direction == Direction.DEBIT }.sumOf { it.amount }

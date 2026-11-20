@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import cl.wenasea.wenagastos.AppContainer
+import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsViewModel
 import cl.wenasea.wenagastos.ui.editor.EditorViewModel
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
 import cl.wenasea.wenagastos.ui.settings.SettingsViewModel
@@ -30,7 +31,13 @@ object VmFactories {
 
     fun settings(container: AppContainer) = viewModelFactory {
         initializer {
-            SettingsViewModel(container.accounts, container.categories)
+            SettingsViewModel(container.accounts, container.categories, container.captureLogs)
+        }
+    }
+
+    fun captureDiagnostics(container: AppContainer) = viewModelFactory {
+        initializer {
+            CaptureDiagnosticsViewModel(container.captureLogs)
         }
     }
 }

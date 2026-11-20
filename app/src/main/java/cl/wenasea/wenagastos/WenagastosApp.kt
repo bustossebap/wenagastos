@@ -2,9 +2,11 @@ package cl.wenasea.wenagastos
 
 import android.app.Application
 import androidx.room.Room
+import cl.wenasea.wenagastos.capture.CaptureEngine
 import cl.wenasea.wenagastos.data.Seeder
 import cl.wenasea.wenagastos.data.local.WenagastosDatabase
 import cl.wenasea.wenagastos.data.repo.AccountRepository
+import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
@@ -21,12 +23,18 @@ class AppContainer(application: Application) {
     private val database: WenagastosDatabase = Room.databaseBuilder(
         application,
         WenagastosDatabase::class.java,
-        "wenagastos.db",
-    ).build()
+        WenagastosDatabase.NAME,
+    )
+        .addMigrations(*WenagastosDatabase.ALL_MIGRATIONS)
+        .build()
 
     val accounts = AccountRepository(database.accountDao())
     val categories = CategoryRepository(database.categoryDao())
     val transactions = TransactionRepository(database.transactionDao())
+    val captureLogs = CaptureLogRepository(database.captureLogDao())
+
+    /** Motor que traduce notificaciones del banco en movimientos. */
+    val capture = CaptureEngine(transactions, accounts, categories, captureLogs)
 }
 
 class WenagastosApp : Application() {

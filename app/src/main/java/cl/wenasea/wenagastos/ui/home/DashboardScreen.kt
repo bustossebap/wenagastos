@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.common.CaptureOffCard
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.MonthSwitcher
@@ -67,6 +68,8 @@ fun DashboardScreen(
                 )
             }
         }
+
+        item { CaptureOffCard() }
 
         item {
             MonthSwitcher(

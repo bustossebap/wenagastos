@@ -2,6 +2,7 @@ package cl.wenasea.wenagastos.data.local
 
 import androidx.room.TypeConverter
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
+import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
@@ -45,4 +46,10 @@ class Converters {
 
     @TypeConverter
     fun stringToStatus(value: String): TransactionStatus = TransactionStatus.valueOf(value)
+
+    @TypeConverter
+    fun outcomeToString(value: CaptureOutcome): String = value.name
+
+    @TypeConverter
+    fun stringToOutcome(value: String): CaptureOutcome = CaptureOutcome.valueOf(value)
 }

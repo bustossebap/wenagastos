@@ -11,7 +11,7 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
    Parser por institución → monto, comercio, tarjeta, tipo de movimiento
         │
         ▼  deduplicación (hash + ventana temporal)
-   Motor de reglas + aprendizaje de comercios → categoría sugerida
+   Motor de reglas de comercio → categoría sugerida (Fase 3: reglas propias)
         │
         ▼
    Room (SQLite cifrado) → Dashboard · Reportes · Export
@@ -23,18 +23,25 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 |---|---|---|
 | 0 | Toolchain, esqueleto, APK debug instalable | ✅ |
 | 1 | Room + cuentas + categorías + carga manual | ✅ |
-| 2 | Captura por notificaciones + diagnóstico | ⬜ |
+| 2 | Captura por notificaciones + diagnóstico | ✅ |
 | 3 | Reglas y aprendizaje | ⬜ |
 | 4 | Transferencias propias, reportes, presupuestos | ⬜ |
 | 5 | Export, backup cifrado (SQLCipher), biometría | ⬜ |
 
-## Qué hace hoy (Fase 1)
+## Qué hace hoy (Fases 1 y 2)
 
+- **Captura automática**: un `NotificationListenerService` local escucha solo los paquetes de Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet; el resto se ignora sin guardar nada.
+- **Un parser por banco**: obtiene monto en CLP, comercio o destinatario, últimos 4 dígitos, si la tarjeta es de crédito o débito, y si la plata entra o sale. Los avisos de saldo, claves, promociones y resúmenes vacíos se descartan con el motivo anotado.
+- **Cuenta automática**: los últimos 4 dígitos se cruzan con `accounts.last4` (se configuran tocando la cuenta en Ajustes).
+- **Confianza**: parseo completo + cuenta conocida → **Confirmado** (suma en los totales). Si falta el comercio, la tarjeta o la cuenta → **Por revisar**: no suma en los totales, se cuenta en la tarjeta *Por revisar* del inicio y el motivo queda escrito en las notas del movimiento (se ve al abrirlo y se borra al confirmarlo).
+- **Duplicados**: hash SHA-256 (paquete + monto + comercio + ventana de 5 min) y búsqueda por monto y sentido en ±5 min. Si Google Wallet avisa primero, el aviso del banco **completa** ese movimiento (cuenta, comercio, estado, hash) en vez de duplicarlo; si el banco llega primero, Wallet se descarta y no lo pisa.
+- **Diagnóstico** (Ajustes → "Ver últimos avisos"): texto crudo, resultado (registrado / por revisar / duplicado / completado / otra app / no es un movimiento) y detalle. La bitácora se recorta sola a las últimas 200 filas.
+- **Aviso en Inicio**: si el permiso de notificaciones está apagado aparece la tarjeta *La captura está apagada* con botón **Activar**; se va sola al volver de los Ajustes del sistema.
 - **Inicio**: gasto total del mes, ingresos, balance, pendientes por revisar, top 5 categorías con barra de proporción y últimos movimientos. Navegación por mes (‹ ›).
 - **Movimientos**: lista del mes agrupada por día (formato chileno `vie 20 nov`), con total gastado por día.
 - **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. Se puede eliminar al editar.
-- **Ajustes**: cuentas y categorías sembradas, nota de privacidad.
-- Datos iniciales: Santander Cta. Cte., Santander Débito, Falabella CMR, Falabella Débito, MercadoPago Ahorro + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
+- **Ajustes**: permiso de captura, cuentas (con sus últimos 4 dígitos), categorías y nota de privacidad.
+- Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
 - Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher se suma en la Fase 5, previo a los respaldos.
 
 ## Stack
@@ -53,6 +60,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
+./gradlew :app:testDebugUnitTest      # 42 pruebas: parsers, montos, categorías y motor de captura
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
 
@@ -66,6 +74,21 @@ $ANDROID_SDK_ROOT/emulator/emulator -avd wena36 &
 ```
 
 AVD `wena36`: Pixel 7, Android 16 (API 36), `google_apis`, arm64-v8a (sin Play Store).
+
+### Probar la captura sin gastar plata
+
+```bash
+adb shell 'cmd notification post -S bigtext -t Santander tag_compra "Compraste \$7.890 en FARMACIA AHUMADA con tu tarjeta de débito terminada en 4321"'
+```
+
+El aviso lo publica `com.android.shell`, así que el resultado depende del texto:
+
+- sin últimos 4 dígitos (o con una tarjeta sin asociar) el movimiento queda **Por revisar** con la nota de que no se supo con qué cuenta se pagó (no suma en los totales y el motivo se ve al abrir el movimiento);
+- con `terminada en 4321` y esa tarjeta asociada entra como **Confirmado** en la cuenta y mueve los totales.
+
+Ojo con el `$`: hay que escaparlo dentro de la comilla que recibe el teléfono, si no el shell local lo
+come y el aviso llega cortado (`text=Compraste`), lo que termina como *no es un movimiento* en el
+diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) están cubiertos por los tests.
 
 ## Privacidad
 
@@ -90,11 +113,6 @@ AVD `wena36`: Pixel 7, Android 16 (API 36), `google_apis`, arm64-v8a (sin Play S
 
 ## Siguiente
 
-- **Fase 2 — captura de notificaciones**: `NotificationListenerService` + un parser por banco (Santander, Falabella, MercadoPago, Google Wallet) y una pantalla de diagnóstico que muestre el texto crudo y qué se parseó.
-  Se puede desarrollar y probar en el emulador lanzando notificaciones falsas:
-
-  ```bash
-  adb shell cmd notification post -S bigtext -t 'Santander' tag_santander 'Compraste $12.500 en LIDER EXPRESS con tu tarjeta terminada en 4321'
-  ```
-
-  La validación con notificaciones reales queda para cuando el A34 esté conectado.
+- **Calibrar con avisos reales** (en curso): el motor ya está cerrado y probado con avisos sintéticos, pero falta ver los textos reales del A34. Para cada banco (Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet) se compara el texto crudo con lo que se parseó en **Diagnóstico** y se ajustan `BankSource.packages` y los patrones de `NotifParser` / `AmountExtractor` / `MerchantExtractor` / `CardDetector`.
+  Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
+- **Fase 3 — reglas y aprendizaje**: tabla `merchant_rules` (clave del comercio única, categoría, usos, fecha), resolución regla del usuario → `MerchantCategories`, botón "recordar para este comercio" en el editor y pantalla "Reglas por comercio" en Ajustes.

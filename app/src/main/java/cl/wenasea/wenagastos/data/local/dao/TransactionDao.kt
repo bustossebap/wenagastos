@@ -29,6 +29,23 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getById(id: Long): TransactionEntity?
 
+    /** Busca un movimiento parecido: mismo monto y sentido, dentro de una ventana de tiempo. */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE amount = :amount AND direction = :direction
+          AND occurredAt BETWEEN :from AND :to
+        ORDER BY occurredAt ASC, id ASC
+        LIMIT 1
+        """,
+    )
+    suspend fun findNearby(
+        amount: Long,
+        direction: String,
+        from: Long,
+        to: Long,
+    ): TransactionEntity?
+
     @Query("SELECT COUNT(*) FROM transactions WHERE dedupeHash = :hash")
     suspend fun countByHash(hash: String): Int
 

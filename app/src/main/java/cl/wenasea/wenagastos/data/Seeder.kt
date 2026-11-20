@@ -33,6 +33,18 @@ object Seeder {
             colorHex = "#EC0000",
         ),
         AccountEntity(
+            name = "Santander MC Platinum Latam",
+            institution = Institution.SANTANDER,
+            kind = AccountKind.CREDIT,
+            colorHex = "#EC0000",
+        ),
+        AccountEntity(
+            name = "Falabella Cta. Cte.",
+            institution = Institution.FALABELLA,
+            kind = AccountKind.CHECKING,
+            colorHex = "#7CB342",
+        ),
+        AccountEntity(
             name = "Falabella CMR",
             institution = Institution.FALABELLA,
             kind = AccountKind.CREDIT,
@@ -45,7 +57,7 @@ object Seeder {
             colorHex = "#7CB342",
         ),
         AccountEntity(
-            name = "MercadoPago Ahorro",
+            name = "MercadoPago",
             institution = Institution.MERCADOPAGO,
             kind = AccountKind.SAVINGS,
             colorHex = "#00A1E0",
