@@ -79,3 +79,22 @@ AVD `wena36`: Pixel 7, Android 16 (API 36), `google_apis`, arm64-v8a (sin Play S
 - Montos en `Long` en pesos chilenos, sin decimales (`TransactionEntity.amount`).
 - Fechas: `epoch millis` en zona `America/Santiago`; se formatean con `java.time`.
 - Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras).
+
+## Problemas conocidos
+
+- **Gradle no ve los cambios de archivos** (el daemon cachea el sistema de archivos y responde `UP-TO-DATE` aunque el código cambió). Solución:
+
+  ```bash
+  ./gradlew --stop && ./gradlew :app:assembleDebug --no-daemon
+  ```
+
+## Siguiente
+
+- **Fase 2 — captura de notificaciones**: `NotificationListenerService` + un parser por banco (Santander, Falabella, MercadoPago, Google Wallet) y una pantalla de diagnóstico que muestre el texto crudo y qué se parseó.
+  Se puede desarrollar y probar en el emulador lanzando notificaciones falsas:
+
+  ```bash
+  adb shell cmd notification post -S bigtext -t 'Santander' tag_santander 'Compraste $12.500 en LIDER EXPRESS con tu tarjeta terminada en 4321'
+  ```
+
+  La validación con notificaciones reales queda para cuando el A34 esté conectado.
