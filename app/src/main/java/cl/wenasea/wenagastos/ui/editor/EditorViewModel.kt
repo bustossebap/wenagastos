@@ -11,6 +11,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
+import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.domain.opposite
@@ -34,6 +35,10 @@ data class EditorUiState(
     val error: String? = null,
     /** Ya hay un movimiento en la cuenta de destino que parece ser la otra pata del traspaso. */
     val counterpartExists: Boolean = false,
+    /** Categoría que ya está recordada para el comercio escrito (null si no hay regla vigente). */
+    val rememberedCategoryId: Long? = null,
+    /** El comercio escrito ya tiene regla guardada, aunque su categoría ya no exista. */
+    val hasRule: Boolean = false,
 )
 
 class EditorViewModel(
@@ -41,12 +46,16 @@ class EditorViewModel(
     private val transactions: TransactionRepository,
     private val accountsRepository: AccountRepository,
     private val categoriesRepository: CategoryRepository,
+    private val rulesRepository: MerchantRuleRepository,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(EditorUiState(isEditing = txId != 0L))
 
     /** Consulta en curso de "¿ya está la otra pata?"; se cancela al cambiar los datos. */
     private var counterpartJob: Job? = null
+
+    /** Consulta en curso de "¿este comercio ya tiene regla?"; se cancela al cambiar los datos. */
+    private var ruleJob: Job? = null
 
     val state: StateFlow<EditorUiState> = combine(
         local,
@@ -79,6 +88,7 @@ class EditorViewModel(
         isTransfer: Boolean = false,
         transferAccountId: Long? = null,
         createCounterpart: Boolean = false,
+        rememberRule: Boolean = false,
         occurredAtMillis: Long,
     ) {
         val amount = Money.parse(amountText)
@@ -138,6 +148,11 @@ class EditorViewModel(
                 // Si la otra pata ya está anotada se enlaza igual, aunque no se pida crearla.
                 syncCounterpart(leg, create = createCounterpart)
             }
+            // Fase 3: la corrección del usuario se aprende y gana sobre la semilla del catálogo.
+            val category = entity.categoryId
+            if (rememberRule && !isTransfer && category != null) {
+                rulesRepository.remember(entity.merchantRaw, entity.direction, category)
+            }
             local.update { it.copy(saving = false, saved = true) }
         }
     }
@@ -170,6 +185,25 @@ class EditorViewModel(
                 at = occurredAtMillis,
             )
             local.update { it.copy(counterpartExists = found != null) }
+        }
+    }
+
+    /**
+     * Avisa si el comercio escrito ya tiene una regla guardada, para no volver a pedir la misma
+     * categoría. Se consulta de nuevo al cambiar el comercio o el sentido.
+     */
+    fun checkRule(merchant: String, direction: Direction) {
+        ruleJob?.cancel()
+        if (merchant.isBlank()) {
+            local.update { it.copy(rememberedCategoryId = null, hasRule = false) }
+            return
+        }
+        ruleJob = viewModelScope.launch {
+            val rule = rulesRepository.ruleFor(merchant, direction)
+            val active = rule?.categoryId?.takeIf { id ->
+                categoriesRepository.listActive().any { it.id == id }
+            }
+            local.update { it.copy(rememberedCategoryId = active, hasRule = rule != null) }
         }
     }
 

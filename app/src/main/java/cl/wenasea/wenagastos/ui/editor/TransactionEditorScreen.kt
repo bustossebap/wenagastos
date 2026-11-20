@@ -76,6 +76,8 @@ fun TransactionEditorScreen(
     var originId by rememberSaveable { mutableLongStateOf(-1L) }
     var destinationId by rememberSaveable { mutableLongStateOf(-1L) }
     var createCounterpart by rememberSaveable { mutableStateOf(true) }
+    // Fase 3: por defecto NO se aprende nada; el usuario marca la casilla a propósito.
+    var rememberRule by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.transaction) {
         val stored = state.transaction ?: return@LaunchedEffect
@@ -127,6 +129,14 @@ fun TransactionEditorScreen(
         createCounterpart = !state.counterpartExists
     }
 
+    // ¿Este comercio ya tiene una categoría recordada? (un traspaso no aprende reglas)
+    LaunchedEffect(merchant, direction, isTransfer) {
+        if (isTransfer) {
+            rememberRule = false
+        }
+        viewModel.checkRule(if (isTransfer) "" else merchant, direction)
+    }
+
     LaunchedEffect(state.saved) {
         if (state.saved) onDone()
     }
@@ -143,6 +153,9 @@ fun TransactionEditorScreen(
     val effectiveCategoryId = categoryId.takeIf { id ->
         id > 0 && visibleCategories.any { it.id == id }
     }
+    // La regla guardada ya apunta a la categoría elegida: no hay nada nuevo que aprender.
+    val alreadyRemembered =
+        state.rememberedCategoryId != null && state.rememberedCategoryId == effectiveCategoryId
 
     Column(
         modifier = modifier
@@ -395,6 +408,39 @@ fun TransactionEditorScreen(
             }
         }
 
+        if (!isTransfer) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Recordar para este comercio",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = when {
+                            effectiveCategoryId == null ->
+                                "Elige una categoría para poder recordarla."
+                            alreadyRemembered ->
+                                "Ya está recordado: este comercio siempre se anota aquí."
+                            state.hasRule ->
+                                "Se recuerda otra categoría; marca para cambiarla."
+                            else ->
+                                "El próximo aviso de este comercio se anota en esta categoría."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Checkbox(
+                    checked = rememberRule && effectiveCategoryId != null,
+                    onCheckedChange = { rememberRule = it },
+                    enabled = effectiveCategoryId != null && !alreadyRemembered,
+                )
+            }
+        }
+
         state.error?.let { message ->
             Text(
                 text = message,
@@ -423,6 +469,7 @@ fun TransactionEditorScreen(
                     isTransfer = isTransfer,
                     transferAccountId = columns?.transferAccountId,
                     createCounterpart = createCounterpart && !state.counterpartExists,
+                    rememberRule = rememberRule && !alreadyRemembered,
                     occurredAtMillis = if (occurredAt > 0L) occurredAt else Dates.todayMillis(),
                 )
             },

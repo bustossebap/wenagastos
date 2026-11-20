@@ -8,6 +8,7 @@ import cl.wenasea.wenagastos.AppContainer
 import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsViewModel
 import cl.wenasea.wenagastos.ui.editor.EditorViewModel
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
+import cl.wenasea.wenagastos.ui.settings.MerchantRulesViewModel
 import cl.wenasea.wenagastos.ui.settings.SettingsViewModel
 
 /** Acceso al contenedor de dependencias desde Compose. */
@@ -25,13 +26,25 @@ object VmFactories {
 
     fun editor(container: AppContainer, txId: Long) = viewModelFactory {
         initializer {
-            EditorViewModel(txId, container.transactions, container.accounts, container.categories)
+            EditorViewModel(
+                txId,
+                container.transactions,
+                container.accounts,
+                container.categories,
+                container.rules,
+            )
         }
     }
 
     fun settings(container: AppContainer) = viewModelFactory {
         initializer {
             SettingsViewModel(container.accounts, container.categories, container.captureLogs)
+        }
+    }
+
+    fun merchantRules(container: AppContainer) = viewModelFactory {
+        initializer {
+            MerchantRulesViewModel(container.rules, container.categories)
         }
     }
 

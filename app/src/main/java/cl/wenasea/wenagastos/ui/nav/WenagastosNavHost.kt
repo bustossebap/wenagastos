@@ -21,12 +21,14 @@ import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsScreen
 import cl.wenasea.wenagastos.ui.editor.TransactionEditorScreen
 import cl.wenasea.wenagastos.ui.home.DashboardScreen
 import cl.wenasea.wenagastos.ui.movements.MovementsScreen
+import cl.wenasea.wenagastos.ui.settings.MerchantRulesScreen
 import cl.wenasea.wenagastos.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
     const val MOVEMENTS = "movements"
     const val SETTINGS = "settings"
+    const val RULES = "rules"
     const val CAPTURE = "capture"
     const val EDITOR = "editor?txId={txId}"
 
@@ -96,7 +98,13 @@ fun WenagastosNavHost() {
                 )
             }
             composable(Routes.SETTINGS) {
-                SettingsScreen(onOpenDiagnostics = { navController.navigate(Routes.CAPTURE) })
+                SettingsScreen(
+                    onOpenDiagnostics = { navController.navigate(Routes.CAPTURE) },
+                    onOpenRules = { navController.navigate(Routes.RULES) },
+                )
+            }
+            composable(Routes.RULES) {
+                MerchantRulesScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.CAPTURE) {
                 CaptureDiagnosticsScreen(onBack = { navController.popBackStack() })

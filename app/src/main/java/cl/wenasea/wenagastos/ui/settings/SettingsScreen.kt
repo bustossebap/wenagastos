@@ -41,6 +41,7 @@ import cl.wenasea.wenagastos.ui.common.asColor
 @Composable
 fun SettingsScreen(
     onOpenDiagnostics: () -> Unit = {},
+    onOpenRules: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val container = LocalContainer.current
@@ -126,6 +127,22 @@ fun SettingsScreen(
                             Text("Ver últimos avisos (${state.capturedCount})")
                         }
                     }
+                }
+            }
+        }
+
+        item {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    SectionHeader(title = "Reglas por comercio")
+                    Text(
+                        text = "Los comercios que ya te aprendiste: la categoría que elegiste se " +
+                            "anota sola la próxima vez, incluso si la lista fija diría otra cosa.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                    TextButton(onClick = onOpenRules) { Text("Ver reglas") }
                 }
             }
         }
