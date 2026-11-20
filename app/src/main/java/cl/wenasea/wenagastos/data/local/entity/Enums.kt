@@ -1,12 +1,16 @@
 package cl.wenasea.wenagastos.data.local.entity
 
-/** Instituciones soportadas. Google Wallet se usa como fuente de datos, no como cuenta. */
-enum class Institution(val label: String, val emoji: String) {
-    SANTANDER("Santander", "🏦"),
-    FALABELLA("Falabella", "🏬"),
-    MERCADOPAGO("MercadoPago", "💙"),
-    CASH("Efectivo", "💵"),
-    OTHER("Otra", "🏛️"),
+/**
+ * Instituciones soportadas. Google Wallet se usa como fuente de datos, no como cuenta.
+ * [colorHex] es el color por defecto de una cuenta nueva de esa institución, así el alta no
+ * tiene que pedir un color aparte.
+ */
+enum class Institution(val label: String, val emoji: String, val colorHex: String) {
+    SANTANDER("Santander", "🏦", "#EC0000"),
+    FALABELLA("Falabella", "🏬", "#7CB342"),
+    MERCADOPAGO("MercadoPago", "💙", "#00A1E0"),
+    CASH("Efectivo", "💵", "#FFB300"),
+    OTHER("Otra", "🏛️", "#607D8B"),
 }
 
 enum class AccountKind(val label: String) {

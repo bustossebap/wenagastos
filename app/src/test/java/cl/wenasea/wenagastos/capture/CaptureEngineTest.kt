@@ -11,6 +11,7 @@ import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
+import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
@@ -45,6 +46,7 @@ class CaptureEngineTest {
 
     private var ctaCteId = 0L
     private var debitoId = 0L
+    private var falabellaId = 0L
     private var supermercadoId = 0L
     private var restaurantesId = 0L
     private var otrosIngresosId = 0L
@@ -87,6 +89,7 @@ class CaptureEngineTest {
         )
         ctaCteId = ids[0]
         debitoId = ids[1]
+        falabellaId = ids[2]
 
         categories.seedAll(Seeder.defaultCategories())
         supermercadoId = categories.stored.first { it.name == "Supermercado" }.id
@@ -455,6 +458,59 @@ class CaptureEngineTest {
                 txDao.stored.map { it.direction }.toSet(),
             )
             assertTrue(txDao.stored.all { it.isTransfer })
+        }
+    }
+
+    @Test
+    fun `las dos patas de un traspaso entre cuentas quedan enlazadas`() {
+        runBlocking {
+            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            accounts.update(accounts.getById(falabellaId)!!.copy(last4 = "7888"))
+
+            assertEquals(
+                CaptureOutcome.SAVED,
+                engine.handle(notif(text = traspasoDesdeOtra, at = baseTime)),
+            )
+            assertEquals(
+                CaptureOutcome.SAVED,
+                engine.handle(notif(text = traspasoEntra, at = baseTime + 5_000L)),
+            )
+
+            val sale = txDao.stored.single { it.direction == Direction.DEBIT }
+            val entra = txDao.stored.single { it.direction == Direction.CREDIT }
+            // Cada pata apunta a la cuenta de la otra, así la lista muestra "Falabella → Santander".
+            assertEquals(falabellaId, sale.accountId)
+            assertEquals(ctaCteId, sale.transferAccountId)
+            assertEquals(ctaCteId, entra.accountId)
+            assertEquals(falabellaId, entra.transferAccountId)
+            assertNotNull(sale.transferGroupId)
+            assertEquals(sale.transferGroupId, entra.transferGroupId)
+        }
+    }
+
+    @Test
+    fun `un gasto normal del mismo monto no se enlaza como traspaso`() {
+        runBlocking {
+            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            // Un ingreso del mismo monto y sentido contrario, pero no es un traspaso.
+            txDao.seed(
+                TransactionEntity(
+                    accountId = debitoId,
+                    occurredAt = baseTime,
+                    amount = 40_000L,
+                    direction = Direction.CREDIT,
+                    merchantRaw = "Devolución",
+                    merchantNorm = "devolucion",
+                    isTransfer = false,
+                ),
+            )
+
+            // El número 7888 no está asignado: la pata queda por revisar, pero igual se intenta enlazar.
+            assertEquals(CaptureOutcome.PENDING, engine.handle(notif(text = traspasoDesdeOtra)))
+
+            val sale = txDao.stored.single { it.direction == Direction.DEBIT }
+            assertNull(sale.transferAccountId)
+            assertNull(sale.transferGroupId)
         }
     }
 

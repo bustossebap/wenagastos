@@ -4,13 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
+import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
+import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.domain.opposite
+import cl.wenasea.wenagastos.domain.transferEnds
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +32,8 @@ data class EditorUiState(
     val saving: Boolean = false,
     val saved: Boolean = false,
     val error: String? = null,
+    /** Ya hay un movimiento en la cuenta de destino que parece ser la otra pata del traspaso. */
+    val counterpartExists: Boolean = false,
 )
 
 class EditorViewModel(
@@ -37,6 +44,9 @@ class EditorViewModel(
 ) : ViewModel() {
 
     private val local = MutableStateFlow(EditorUiState(isEditing = txId != 0L))
+
+    /** Consulta en curso de "¿ya está la otra pata?"; se cancela al cambiar los datos. */
+    private var counterpartJob: Job? = null
 
     val state: StateFlow<EditorUiState> = combine(
         local,
@@ -67,6 +77,8 @@ class EditorViewModel(
         categoryId: Long?,
         direction: Direction,
         isTransfer: Boolean = false,
+        transferAccountId: Long? = null,
+        createCounterpart: Boolean = false,
         occurredAtMillis: Long,
     ) {
         val amount = Money.parse(amountText)
@@ -76,6 +88,14 @@ class EditorViewModel(
         }
         if (accountId == null) {
             local.update { it.copy(error = "Elige una cuenta") }
+            return
+        }
+        if (isTransfer && transferAccountId == null) {
+            local.update { it.copy(error = "Elige a qué cuenta se transfiere") }
+            return
+        }
+        if (isTransfer && transferAccountId == accountId) {
+            local.update { it.copy(error = "El origen y el destino no pueden ser la misma cuenta") }
             return
         }
 
@@ -88,6 +108,10 @@ class EditorViewModel(
             merchantRaw = cleanMerchant,
             merchantNorm = cleanMerchant.lowercase(),
         )
+        // Un traspaso no es gasto ni ingreso: se guarda siempre con la categoría de traspaso.
+        val transferCategoryId = state.value.categories
+            .firstOrNull { it.kind == CategoryKind.TRANSFER }
+            ?.id
 
         val entity = base.copy(
             accountId = accountId,
@@ -96,9 +120,11 @@ class EditorViewModel(
             direction = direction,
             merchantRaw = cleanMerchant,
             merchantNorm = cleanMerchant.lowercase(),
-            categoryId = categoryId,
+            categoryId = if (isTransfer) transferCategoryId ?: categoryId else categoryId,
             isExpense = direction == Direction.DEBIT && !isTransfer,
             isTransfer = isTransfer,
+            transferAccountId = if (isTransfer) transferAccountId else null,
+            transferGroupId = if (isTransfer) base.transferGroupId else null,
             status = TransactionStatus.CONFIRMED,
             // El motivo del "por revisar" lo generó el motor: al guardar, el usuario ya decidió.
             notes = null,
@@ -106,8 +132,92 @@ class EditorViewModel(
 
         viewModelScope.launch {
             local.update { it.copy(saving = true, error = null) }
-            transactions.save(entity)
+            val savedId = transactions.save(entity)
+            if (isTransfer) {
+                val leg = if (entity.id == 0L) entity.copy(id = savedId) else entity
+                // Si la otra pata ya está anotada se enlaza igual, aunque no se pida crearla.
+                syncCounterpart(leg, create = createCounterpart)
+            }
             local.update { it.copy(saving = false, saved = true) }
+        }
+    }
+
+    /**
+     * Avisa si la otra pata del traspaso ya está anotada en la cuenta de destino, para ofrecer
+     * crearla solo cuando falta. Se vuelve a consultar cuando cambia el monto, el sentido, las
+     * cuentas o la fecha.
+     */
+    fun checkCounterpart(
+        amountText: String,
+        direction: Direction,
+        accountId: Long?,
+        transferAccountId: Long?,
+        occurredAtMillis: Long,
+    ) {
+        counterpartJob?.cancel()
+        val amount = Money.parse(amountText)
+        if (amount == null || accountId == null || transferAccountId == null ||
+            accountId == transferAccountId
+        ) {
+            local.update { it.copy(counterpartExists = false) }
+            return
+        }
+        counterpartJob = viewModelScope.launch {
+            val found = transactions.findCounterpart(
+                amount = amount,
+                direction = direction.opposite(),
+                accountId = transferAccountId,
+                at = occurredAtMillis,
+            )
+            local.update { it.copy(counterpartExists = found != null) }
+        }
+    }
+
+    /**
+     * Deja las dos patas cuadradas: si la de destino ya existe la enlaza, y si falta y [create]
+     * es `true` la crea con el sentido contrario, el mismo monto y la misma fecha.
+     *
+     * Un movimiento del mismo monto en la cuenta de destino que no sea traspaso no se toca ni se
+     * duplica: se asume que es la otra pata anotada como gasto o ingreso y se deja como está.
+     */
+    private suspend fun syncCounterpart(leg: TransactionEntity, create: Boolean) {
+        val destinationId = leg.transferAccountId ?: return
+        val existing = transactions.findCounterpart(
+            amount = leg.amount,
+            direction = leg.direction.opposite(),
+            accountId = destinationId,
+            at = leg.occurredAt,
+        )
+        if (existing != null) {
+            if (existing.isTransfer) transactions.linkTransfer(leg, existing)
+            return
+        }
+        if (!create || leg.id == 0L) return
+
+        val originName = leg.transferEnds().originId
+            ?.let { id -> state.value.accounts.firstOrNull { it.id == id }?.name }
+        val counterpartName = if (originName != null) "Traspaso desde $originName" else "Traspaso"
+        val groupId = leg.transferGroupId ?: leg.id
+        transactions.save(
+            TransactionEntity(
+                accountId = destinationId,
+                occurredAt = leg.occurredAt,
+                amount = leg.amount,
+                direction = leg.direction.opposite(),
+                merchantRaw = counterpartName,
+                merchantNorm = counterpartName.lowercase(),
+                categoryId = leg.categoryId,
+                status = TransactionStatus.CONFIRMED,
+                isExpense = false,
+                isTransfer = true,
+                transferAccountId = leg.accountId,
+                transferGroupId = groupId,
+                source = TransactionSource.MANUAL,
+            ),
+        )
+        // Las dos patas comparten el grupo, así se reconocen como el mismo traspaso.
+        if (leg.transferGroupId != groupId) {
+            transactions.save(leg.copy(transferGroupId = groupId))
         }
     }
 

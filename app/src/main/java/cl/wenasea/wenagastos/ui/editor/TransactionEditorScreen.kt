@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.ui.editor
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -44,6 +46,9 @@ import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.domain.transferColumns
+import cl.wenasea.wenagastos.domain.transferEnds
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
 
@@ -67,6 +72,10 @@ fun TransactionEditorScreen(
     var occurredAt by rememberSaveable { mutableLongStateOf(0L) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var prefilled by rememberSaveable { mutableStateOf(false) }
+    // Cuentas del traspaso: el origen y el destino se eligen aparte del sentido del movimiento.
+    var originId by rememberSaveable { mutableLongStateOf(-1L) }
+    var destinationId by rememberSaveable { mutableLongStateOf(-1L) }
+    var createCounterpart by rememberSaveable { mutableStateOf(true) }
 
     LaunchedEffect(state.transaction) {
         val stored = state.transaction ?: return@LaunchedEffect
@@ -78,14 +87,44 @@ fun TransactionEditorScreen(
             direction = stored.direction
             isTransfer = stored.isTransfer
             occurredAt = stored.occurredAt
+            if (stored.isTransfer) {
+                val ends = stored.transferEnds()
+                originId = ends.originId ?: -1L
+                destinationId = ends.destinationId ?: -1L
+            }
             prefilled = true
         }
     }
 
-    LaunchedEffect(state.accounts) {
+    LaunchedEffect(state.accounts, isTransfer) {
         if (accountId <= 0 && state.accounts.isNotEmpty()) {
             accountId = state.accounts.first().id
         }
+        if (isTransfer && state.accounts.isNotEmpty()) {
+            // Si venía de un movimiento normal, su cuenta es el origen del traspaso.
+            if (originId <= 0) originId = accountId.takeIf { it > 0 } ?: state.accounts.first().id
+            if (destinationId <= 0) {
+                destinationId = state.accounts.firstOrNull { it.id != originId }?.id ?: -1L
+            }
+        }
+    }
+
+    // Consulta si la otra pata ya está anotada cada vez que cambia algo que la identifica.
+    LaunchedEffect(isTransfer, originId, destinationId, direction, amountText, occurredAt) {
+        if (isTransfer) {
+            viewModel.checkCounterpart(
+                amountText = amountText,
+                direction = direction,
+                accountId = originId.takeIf { it > 0 },
+                transferAccountId = destinationId.takeIf { it > 0 },
+                occurredAtMillis = if (occurredAt > 0L) occurredAt else Dates.todayMillis(),
+            )
+        }
+    }
+
+    // La casilla viene marcada solo si falta la otra pata: si ya está, se enlaza y no se duplica.
+    LaunchedEffect(state.counterpartExists) {
+        createCounterpart = !state.counterpartExists
     }
 
     LaunchedEffect(state.saved) {
@@ -141,16 +180,19 @@ fun TransactionEditorScreen(
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             FilterChip(
                 selected = direction == Direction.DEBIT,
                 onClick = { direction = Direction.DEBIT },
-                label = { Text("Gasto") },
+                label = { Text(if (isTransfer) "Sale de mi cuenta" else "Gasto") },
             )
             FilterChip(
                 selected = direction == Direction.CREDIT,
                 onClick = { direction = Direction.CREDIT },
-                label = { Text("Ingreso") },
+                label = { Text(if (isTransfer) "Entra a mi cuenta" else "Ingreso") },
             )
         }
 
@@ -250,17 +292,88 @@ fun TransactionEditorScreen(
             }
         }
 
-        Text(
-            text = "Cuenta",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(state.accounts, key = { it.id }) { account ->
-                FilterChip(
-                    selected = accountId == account.id,
-                    onClick = { accountId = account.id },
-                    label = { Text(account.name) },
+        if (isTransfer) {
+            Text(
+                text = "Origen",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.accounts, key = { it.id }) { account ->
+                    FilterChip(
+                        selected = originId == account.id,
+                        onClick = {
+                            originId = account.id
+                            if (destinationId == account.id) destinationId = -1L
+                        },
+                        label = { Text(account.name) },
+                    )
+                }
+            }
+            Text(
+                text = "Destino",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(
+                    items = state.accounts.filter { it.id != originId },
+                    key = { it.id },
+                ) { account ->
+                    FilterChip(
+                        selected = destinationId == account.id,
+                        onClick = { destinationId = account.id },
+                        label = { Text(account.name) },
+                    )
+                }
+            }
+        } else {
+            Text(
+                text = "Cuenta",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(state.accounts, key = { it.id }) { account ->
+                    FilterChip(
+                        selected = accountId == account.id,
+                        onClick = { accountId = account.id },
+                        label = { Text(account.name) },
+                    )
+                }
+            }
+        }
+
+        if (isTransfer && originId > 0 && destinationId > 0) {
+            val counterpartAmount = Money.parse(amountText)
+            val destinationName = state.accounts.firstOrNull { it.id == destinationId }?.name
+                ?: "la cuenta de destino"
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Registrar la otra pata",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = if (state.counterpartExists) {
+                            "Ya está anotada en $destinationName: se enlazan las dos."
+                        } else if (counterpartAmount != null) {
+                            "Anota ${Money.format(counterpartAmount)} en $destinationName con " +
+                                "el sentido contrario."
+                        } else {
+                            "Anota el mismo monto en $destinationName con el sentido contrario."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Checkbox(
+                    checked = createCounterpart && !state.counterpartExists,
+                    onCheckedChange = { createCounterpart = it },
+                    enabled = !state.counterpartExists,
                 )
             }
         }
@@ -294,13 +407,22 @@ fun TransactionEditorScreen(
 
         Button(
             onClick = {
+                // Un traspaso guarda la cuenta propia en `accountId` y la otra punta en
+                // `transferAccountId`, según si la plata sale o entra.
+                val columns = if (isTransfer && originId > 0 && destinationId > 0) {
+                    transferColumns(direction, originId, destinationId)
+                } else {
+                    null
+                }
                 viewModel.save(
                     amountText = amountText,
                     merchant = merchant,
-                    accountId = accountId.takeIf { it > 0 },
+                    accountId = columns?.accountId ?: accountId.takeIf { it > 0 },
                     categoryId = effectiveCategoryId,
                     direction = direction,
                     isTransfer = isTransfer,
+                    transferAccountId = columns?.transferAccountId,
+                    createCounterpart = createCounterpart && !state.counterpartExists,
                     occurredAtMillis = if (occurredAt > 0L) occurredAt else Dates.todayMillis(),
                 )
             },

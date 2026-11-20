@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.capture.fakes
 
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
+import cl.wenasea.wenagastos.data.local.dao.AccountMovementCount
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
@@ -95,6 +96,35 @@ class FakeTransactionDao : TransactionDao {
         rows.remove(id)
         publish()
     }
+
+    /** Espeja el filtro por monto, sentido y cuenta, con el mismo orden. */
+    override suspend fun findCounterpart(
+        amount: Long,
+        direction: String,
+        accountId: Long,
+        from: Long,
+        to: Long,
+    ): TransactionEntity? = rows.values
+        .filter {
+            it.amount == amount && it.direction.name == direction &&
+                it.accountId == accountId && it.occurredAt in from..to
+        }
+        .minWithOrNull(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
+
+    /** Espeja el filtro en otra cuenta (`accountId != :accountId AND id != :excludeId`). */
+    override suspend fun findOppositeLeg(
+        amount: Long,
+        direction: String,
+        accountId: Long,
+        excludeId: Long,
+        from: Long,
+        to: Long,
+    ): TransactionEntity? = rows.values
+        .filter {
+            it.amount == amount && it.direction.name == direction &&
+                it.accountId != accountId && it.id != excludeId && it.occurredAt in from..to
+        }
+        .minWithOrNull(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
 }
 
 class FakeAccountDao : AccountDao {
@@ -149,6 +179,26 @@ class FakeAccountDao : AccountDao {
 
     override suspend fun update(account: AccountEntity) {
         rows[account.id] = account
+        publish()
+    }
+
+    /**
+     * El conteo real agrupa `transactions`, tabla que este fake no conoce. Los tests de Ajustes
+     * lo simulan cargando [movementCounts].
+     */
+    var movementCounts: Map<Long, Int> = emptyMap()
+
+    override fun observeMovementCounts(): Flow<List<AccountMovementCount>> =
+        state.map { list ->
+            list.map { account ->
+                AccountMovementCount(account.id, movementCounts[account.id] ?: 0)
+            }
+        }
+
+    override suspend fun countMovements(accountId: Long): Int = movementCounts[accountId] ?: 0
+
+    override suspend fun deleteById(id: Long) {
+        rows.remove(id)
         publish()
     }
 }

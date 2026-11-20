@@ -7,6 +7,12 @@ import androidx.room.Update
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import kotlinx.coroutines.flow.Flow
 
+/** Cuántos movimientos tiene una cuenta: decide si se puede borrar o hay que archivarla. */
+data class AccountMovementCount(
+    val accountId: Long,
+    val total: Int,
+)
+
 @Dao
 interface AccountDao {
 
@@ -18,6 +24,10 @@ interface AccountDao {
 
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id ASC")
     suspend fun getAllActive(): List<AccountEntity>
+
+    /** Conteo de movimientos por cuenta; una cuenta con movimientos se archiva, no se borra. */
+    @Query("SELECT accountId, COUNT(*) AS total FROM transactions GROUP BY accountId")
+    fun observeMovementCounts(): Flow<List<AccountMovementCount>>
 
     /**
      * Busca una cuenta activa por número exacto. `last4` guarda una lista separada por comas,
@@ -36,6 +46,10 @@ interface AccountDao {
     @Query("SELECT COUNT(*) FROM accounts")
     suspend fun count(): Int
 
+    /** Conteo puntual, para decidir si una cuenta se puede borrar o hay que archivarla. */
+    @Query("SELECT COUNT(*) FROM transactions WHERE accountId = :accountId")
+    suspend fun countMovements(accountId: Long): Int
+
     @Insert
     suspend fun insert(account: AccountEntity): Long
 
@@ -44,4 +58,11 @@ interface AccountDao {
 
     @Update
     suspend fun update(account: AccountEntity)
+
+    /**
+     * Borrado real. Solo se usa cuando la cuenta no tiene movimientos: la FK `accountId` es
+     * `CASCADE`, así que borrar una cuenta con historia se llevaría sus movimientos.
+     */
+    @Query("DELETE FROM accounts WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }

@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.data.local
 
+import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
@@ -23,6 +24,8 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
     ],
     version = WenagastosDatabase.VERSION,
     exportSchema = true,
+    // Fase 4: columna `transferAccountId` (la otra pata del traspaso) e índice.
+    autoMigrations = [AutoMigration(from = 2, to = 3)],
 )
 @TypeConverters(Converters::class)
 abstract class WenagastosDatabase : RoomDatabase() {
@@ -37,7 +40,7 @@ abstract class WenagastosDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "wenagastos.db"
-        const val VERSION = 2
+        const val VERSION = 3
 
         /** Fase 2: tabla de diagnóstico de la captura por notificaciones. */
         val MIGRATION_1_2 = object : Migration(1, 2) {

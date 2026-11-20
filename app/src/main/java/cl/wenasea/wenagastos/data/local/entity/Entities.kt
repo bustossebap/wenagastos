@@ -44,6 +44,7 @@ data class CategoryEntity(
         Index("categoryId"),
         Index("occurredAt"),
         Index(value = ["dedupeHash"], unique = false),
+        Index("transferAccountId"),
     ],
     foreignKeys = [
         ForeignKey(
@@ -75,6 +76,13 @@ data class TransactionEntity(
     val isExpense: Boolean = true,
     val isReceivable: Boolean = false,
     val isTransfer: Boolean = false,
+    /**
+     * La otra pata del traspaso: la cuenta que recibe (si este movimiento sale) o la que manda
+     * (si este movimiento entra). Se guarda sin FK a propósito, para que la migración sea solo
+     * `ALTER TABLE`; una referencia huérfana se muestra como "Cuenta" y no rompe nada.
+     */
+    val transferAccountId: Long? = null,
+    /** Identificador común de las dos patas de un mismo traspaso. */
     val transferGroupId: Long? = null,
     val notes: String? = null,
     val source: TransactionSource = TransactionSource.MANUAL,

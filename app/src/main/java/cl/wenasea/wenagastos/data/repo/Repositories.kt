@@ -28,6 +28,13 @@ class AccountRepository(private val dao: AccountDao) {
 
     suspend fun update(account: AccountEntity) = dao.update(account)
 
+    /** Solo para cuentas sin movimientos: la FK `CASCADE` borraría su historia. */
+    suspend fun delete(id: Long) = dao.deleteById(id)
+
+    fun observeMovementCounts() = dao.observeMovementCounts()
+
+    suspend fun countMovements(id: Long) = dao.countMovements(id)
+
     suspend fun count() = dao.count()
 }
 
@@ -82,6 +89,60 @@ class TransactionRepository(private val dao: TransactionDao) {
         at: Long,
         windowMillis: Long = 5 * 60_000L,
     ): TransactionEntity? = dao.findNearby(amount, direction.name, at - windowMillis, at + windowMillis)
+
+    /** La otra pata de un traspaso que ya está anotada en [accountId]. */
+    suspend fun findCounterpart(
+        amount: Long,
+        direction: Direction,
+        accountId: Long,
+        at: Long,
+        windowMillis: Long = COUNTERPART_WINDOW,
+    ): TransactionEntity? = dao.findCounterpart(
+        amount,
+        direction.name,
+        accountId,
+        at - windowMillis,
+        at + windowMillis,
+    )
+
+    /** La otra pata de un traspaso cuando todavía no se sabe en qué cuenta quedó. */
+    suspend fun findOppositeLeg(
+        amount: Long,
+        direction: Direction,
+        accountId: Long,
+        excludeId: Long,
+        at: Long,
+        windowMillis: Long = 5 * 60_000L,
+    ): TransactionEntity? = dao.findOppositeLeg(
+        amount,
+        direction.name,
+        accountId,
+        excludeId,
+        at - windowMillis,
+        at + windowMillis,
+    )
+
+    /**
+     * Deja las dos patas de un traspaso apuntándose entre sí, con un `transferGroupId` común.
+     * Una pata ya guardada conserva su vínculo si no hay nada que corregir.
+     */
+    suspend fun linkTransfer(leg: TransactionEntity, counterpart: TransactionEntity) {
+        if (leg.id == 0L || counterpart.id == 0L) return
+        val groupId = leg.transferGroupId ?: counterpart.transferGroupId ?: leg.id
+        if (leg.transferAccountId != counterpart.accountId || leg.transferGroupId != groupId) {
+            save(leg.copy(transferAccountId = counterpart.accountId, transferGroupId = groupId))
+        }
+        if (counterpart.transferAccountId != leg.accountId ||
+            counterpart.transferGroupId != groupId
+        ) {
+            save(counterpart.copy(transferAccountId = leg.accountId, transferGroupId = groupId))
+        }
+    }
+
+    private companion object {
+        /** Las dos patas de un traspaso pueden llegar con minutos de diferencia entre bancos. */
+        const val COUNTERPART_WINDOW = 6 * 60 * 60_000L
+    }
 }
 
 /** Bitácora de lo que ven las notificaciones (para la pantalla de diagnóstico). */

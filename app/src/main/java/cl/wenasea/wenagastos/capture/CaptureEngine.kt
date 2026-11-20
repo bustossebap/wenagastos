@@ -13,6 +13,7 @@ import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.opposite
 import java.security.MessageDigest
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -122,7 +123,7 @@ class CaptureEngine(
             return CaptureOutcome.MERGED
         }
 
-        transactions.save(
+        val savedId = transactions.save(
             TransactionEntity(
                 accountId = choice.account.id,
                 occurredAt = parsed.occurredAt,
@@ -144,6 +145,7 @@ class CaptureEngine(
                 dedupeHash = hash,
             ),
         )
+        if (parsed.isTransfer) linkTransferLegs(savedId)
 
         val outcome = if (status == TransactionStatus.CONFIRMED) {
             CaptureOutcome.SAVED
@@ -152,6 +154,25 @@ class CaptureEngine(
         }
         log(raw, source, outcome, describe(parsed, choice))
         return outcome
+    }
+
+    /**
+     * Enlaza las dos patas de un traspaso cuando el banco avisa las dos ("… desde tu cuenta" y
+     * "… hacia tu cuenta"): cada una queda apuntando a la cuenta de la otra, así la lista puede
+     * mostrar "Santander Cta. Cte. → Falabella Cta. Cte.". Solo se enlazan traspasos: un gasto
+     * normal del mismo monto en otra cuenta no se toca.
+     */
+    private suspend fun linkTransferLegs(legId: Long) {
+        val leg = transactions.get(legId) ?: return
+        val counterpart = transactions.findOppositeLeg(
+            amount = leg.amount,
+            direction = leg.direction.opposite(),
+            accountId = leg.accountId,
+            excludeId = leg.id,
+            at = leg.occurredAt,
+        ) ?: return
+        if (!counterpart.isTransfer) return
+        transactions.linkTransfer(leg, counterpart)
     }
 
     /** Google Wallet (prioridad 1) se puede completar con el aviso del banco (prioridad 3). */

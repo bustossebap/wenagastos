@@ -25,7 +25,7 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 | 1 | Room + cuentas + categorías + carga manual | ✅ |
 | 2 | Captura por notificaciones + diagnóstico | ✅ |
 | 3 | Reglas y aprendizaje | ⬜ |
-| 4 | Transferencias propias, reportes, presupuestos | 🚧 traspasos entre cuentas propias listos |
+| 4 | Transferencias propias, reportes, presupuestos | 🚧 traspasos con origen y destino, alta y archivo de cuentas |
 | 5 | Export, backup cifrado (SQLCipher), biometría | ⬜ |
 
 ## Qué hace hoy (Fases 1 y 2)
@@ -35,13 +35,15 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 - **Cuenta automática**: los 4 dígitos que trae el aviso (los de la tarjeta en una compra, los **últimos 4 del número de cuenta** en una transferencia: `cuenta 000095441483` → `1483`) se cruzan por número exacto con `accounts.last4`, que se configura tocando la cuenta en Ajustes. Una cuenta puede tener **varios números** separados por coma (ej. `"5678,1234"`: su número de cuenta y el de su tarjeta de débito), así compras y transferencias caen en la misma cuenta.
 - **Confianza**: parseo completo + cuenta conocida → **Confirmado** (suma en los totales). Si falta el comercio, la tarjeta o la cuenta → **Por revisar**: no suma en los totales, se cuenta en la tarjeta *Por revisar* del inicio y el motivo queda escrito en las notas del movimiento (se ve al abrirlo y se borra al confirmarlo).
 - **Traspasos entre cuentas propias**: "Transferencia hacia tu cuenta …" entra como ingreso y "… desde tu cuenta …" como gasto, aunque el aviso no traiga verbo. Se marcan con `isTransfer` y categoría **Entre cuentas**, así **no suman** en gastos, ingresos, balance ni en el gráfico por categoría: la plata no se gastó, solo cambió de cuenta. Solo cuentan como traspaso si el aviso nombra la cuenta propia y **no** trae destinatario; `Transferiste $50.000 a MARIA SOTO` o `Recibiste una transferencia de JUAN PEREZ` siguen siendo gasto e ingreso normales.
+- **Origen y destino del traspaso**: al marcar *Traspaso entre mis cuentas* el editor pide **origen** y **destino** en dos filas de chips (y renombra los chips de sentido a *Sale de mi cuenta* / *Entra a mi cuenta*). La otra punta se guarda en `transferAccountId`, así la lista se lee **Entre cuentas · Santander Cta. Cte. → Falabella Cta. Cte.** desde cualquiera de las dos patas: la que sale y la que entra muestran el mismo par origen → destino. Si el banco avisó una sola pata, la casilla **Registrar la otra pata** (marcada por defecto cuando falta) anota el movimiento espejo en la cuenta de destino, con el sentido contrario, el mismo monto y la misma fecha, y las dos comparten `transferGroupId`. Si la otra pata ya existe (mismo monto, otra cuenta, ±6 h) se enlazan y no se duplica; un movimiento del mismo monto que no sea traspaso no se toca.
+- **Cuentas**: en Ajustes se pueden **crear**, editar y **archivar**. El alta pide nombre, institución y tipo; el color sale de la institución. Los números de 4 dígitos no se pueden repetir entre cuentas activas (el cruce de los avisos es por número exacto). Una cuenta con movimientos no se borra: se **archiva** (deja de ofrecerse al anotar y sus avisos nuevos quedan en Por revisar), porque la FK `transactions.accountId` es `CASCADE` y borrarla se llevaría el historial; solo se borra de verdad cuando no tiene movimientos.
 - **Duplicados**: hash SHA-256 (paquete + monto + **sentido** + **número de cuenta** + comercio + ventana de 5 min) y búsqueda por monto y sentido en ±5 min. El sentido y la cuenta entran al hash porque un traspaso del mismo monto en el mismo minuto sale de una cuenta y entra a otra: son dos movimientos, no un duplicado. La captura corre serializada (un `Mutex` en el motor), así dos avisos simultáneos no pasan los dos la revisión antes de guardarse. Si Google Wallet avisa primero, el aviso del banco **completa** ese movimiento (cuenta, comercio, estado, hash) en vez de duplicarlo; si el banco llega primero, Wallet se descarta y no lo pisa.
 - **Diagnóstico** (Ajustes → "Ver últimos avisos"): texto crudo, resultado (registrado / por revisar / duplicado / completado / otra app / no es un movimiento) y detalle. La bitácora se recorta sola a las últimas 200 filas.
 - **Aviso en Inicio**: si el permiso de notificaciones está apagado aparece la tarjeta *La captura está apagada* con botón **Activar**; se va sola al volver de los Ajustes del sistema.
 - **Inicio**: gasto total del mes, ingresos, balance, pendientes por revisar, top 5 categorías con barra de proporción y últimos movimientos. Navegación por mes (‹ ›).
 - **Movimientos**: lista del mes agrupada por día (formato chileno `vie 20 nov`), con total gastado por día.
-- **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso. Se puede eliminar al editar.
-- **Ajustes**: permiso de captura, cuentas (con los números que aparecen en sus avisos), categorías y nota de privacidad.
+- **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso; en ese caso la cuenta se elige dos veces (**origen** y **destino**) y aparece la casilla de la otra pata. Se puede eliminar al editar.
+- **Ajustes**: permiso de captura, cuentas (crear, editar, archivar y los números que aparecen en sus avisos), categorías y nota de privacidad.
 - Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
 - Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher se suma en la Fase 5, previo a los respaldos.
 
@@ -103,7 +105,7 @@ diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) est
 - Paquetes: `cl.wenasea.wenagastos.<feature>` (`ui`, `data`, `domain`, `capture`, `importexport`).
 - Montos en `Long` en pesos chilenos, sin decimales (`TransactionEntity.amount`).
 - Fechas: `epoch millis` en zona `America/Santiago`; se formatean con `java.time`.
-- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras).
+- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3.
 
 ## Problemas conocidos
 

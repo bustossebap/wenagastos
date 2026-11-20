@@ -27,6 +27,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.domain.transferEnds
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LocalContainer
@@ -230,5 +231,12 @@ internal fun LedgerUiState.colorFor(transaction: TransactionEntity): Color =
 internal fun LedgerUiState.subtitleFor(transaction: TransactionEntity): String {
     val category = transaction.categoryId?.let { categories[it]?.name } ?: "Sin categoría"
     val account = accounts[transaction.accountId]?.name ?: "Cuenta"
+    // Un traspaso se lee igual desde las dos patas: "Santander → Falabella".
+    if (transaction.isTransfer && transaction.transferAccountId != null) {
+        val ends = transaction.transferEnds()
+        val origin = ends.originId?.let { accounts[it]?.name }
+        val destination = ends.destinationId?.let { accounts[it]?.name }
+        if (origin != null && destination != null) return "$category · $origin → $destination"
+    }
     return "$category · $account"
 }
