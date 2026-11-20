@@ -25,10 +25,10 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 | 1 | Room + cuentas + categorías + carga manual | ✅ |
 | 2 | Captura por notificaciones + diagnóstico | ✅ |
 | 3 | Reglas y aprendizaje | ✅ |
-| 4 | Transferencias propias, reportes, presupuestos | 🚧 traspasos con origen y destino, alta y archivo de cuentas |
+| 4 | Transferencias propias, reportes, presupuestos | ✅ |
 | 5 | Export, backup cifrado (SQLCipher), biometría | ⬜ |
 
-## Qué hace hoy (Fases 1, 2 y 3)
+## Qué hace hoy (Fases 1 a 4)
 
 - **Captura automática**: un `NotificationListenerService` local escucha solo los paquetes de Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet; el resto se ignora sin guardar nada.
 - **Un parser por banco**: obtiene monto en CLP, comercio o destinatario, últimos 4 dígitos, si la tarjeta es de crédito o débito, y si la plata entra o sale. Los avisos de saldo, claves, promociones y resúmenes vacíos se descartan con el motivo anotado.
@@ -43,6 +43,9 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 - **Aviso en Inicio**: si el permiso de notificaciones está apagado aparece la tarjeta *La captura está apagada* con botón **Activar**; se va sola al volver de los Ajustes del sistema.
 - **Inicio**: gasto total del mes, ingresos, balance, pendientes por revisar, top 5 categorías con barra de proporción y últimos movimientos. Navegación por mes (‹ ›).
 - **Movimientos**: lista del mes agrupada por día (formato chileno `vie 20 nov`), con total gastado por día.
+- **Reportes** (cuarta pestaña 📊): dona de gastos por categoría con leyenda de porcentajes y el detalle al tocar una categoría (sus movimientos del mes, con acceso al editor), más un gráfico de barras de gastos e ingresos de los últimos 6 meses que sirve para saltar de mes. Arriba, gastos / ingresos / balance / **promedio diario** (en el mes en curso divide por los días corridos). Todo se calcula en Kotlin desde los movimientos del mes, con la misma regla del inicio: no cuentan los movimientos *Por revisar* ni los traspasos, y lo que no tiene categoría aparece como **Sin categoría** para que las partes sumen 100 %.
+- **Presupuestos**: en Reportes se le pone un tope mensual a cualquier categoría de gasto (Guardar / Quitar / Cancelar), y la tarjeta muestra *Presupuestado vs gastado* con el total y cada categoría ordenada por avance. El semáforo es **OK** bajo el 80 %, **ámbar** desde el 80 % y **rojo** al llegar al 100 % ("Te quedan $X" / "Te pasaste $X"). El presupuesto vive en `categories.monthlyBudget`, que existe desde la versión 1 de la base: **no hubo migración** (la base sigue en v4).
+- **Aviso de presupuesto en Inicio**: cuando alguna categoría del mes alcanza el 80 % del tope aparece la tarjeta *Presupuestos* con la barra y lo que queda, y un atajo a Reportes. El aviso se calcula en vivo (no se guarda estado), así que editar o borrar un movimiento lo corrige al instante, y si no hay presupuestos alcanzados la tarjeta no ocupa espacio.
 - **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso; en ese caso la cuenta se elige dos veces (**origen** y **destino**) y aparece la casilla de la otra pata. Se puede eliminar al editar.
 - **Ajustes**: permiso de captura, cuentas (crear, editar, archivar y los números que aparecen en sus avisos), categorías y nota de privacidad.
 - Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
@@ -64,7 +67,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
-./gradlew :app:testDebugUnitTest      # 74 pruebas: parsers, montos, categorías, traspasos, reglas y motor
+./gradlew :app:testDebugUnitTest      # 83 pruebas: parsers, montos, categorías, traspasos, reglas, motor y reportes
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
 
@@ -106,7 +109,7 @@ diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) est
 - Paquetes: `cl.wenasea.wenagastos.<feature>` (`ui`, `data`, `domain`, `capture`, `importexport`).
 - Montos en `Long` en pesos chilenos, sin decimales (`TransactionEntity.amount`).
 - Fechas: `epoch millis` en zona `America/Santiago`; se formatean con `java.time`.
-- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4.
+- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4. La **versión 4 sigue siendo la última**: los presupuestos usan `categories.monthlyBudget`, que existe desde la versión 1.
 - La normalización de texto (`TextNorm`) vive en `domain`, porque la usan tanto `capture` como los repositorios.
 
 ## Problemas conocidos
@@ -121,5 +124,4 @@ diagnóstico. Los caminos difíciles (duplicados, traspaso Wallet → banco) est
 
 - **Calibrar con avisos reales** (en curso): el motor ya está cerrado y probado con avisos sintéticos, pero falta ver los textos reales del A34. Para cada banco (Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet) se compara el texto crudo con lo que se parseó en **Diagnóstico** y se ajustan `BankSource.packages` y los patrones de `NotifParser` / `AmountExtractor` / `MerchantExtractor` / `CardDetector`.
   Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
-- **Fase 4 — reportes y presupuestos**: gráficos por categoría y mes, presupuesto mensual por categoría con aviso al acercarse al límite. Los traspasos y las cuentas ya están cubiertos.
 - **Fase 5 — export y respaldo**: exportar CSV/JSON a un archivo que el usuario elige, backup cifrado con SQLCipher y biometría para abrir la app.

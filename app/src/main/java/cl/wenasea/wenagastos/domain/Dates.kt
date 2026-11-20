@@ -27,6 +27,10 @@ object Dates {
     fun monthLabel(yearMonth: YearMonth): String =
         monthFormatter.format(yearMonth).replaceFirstChar { it.uppercase(locale) }
 
+    /** "nov" para las etiquetas de los gráficos. */
+    fun shortMonthLabel(yearMonth: YearMonth): String =
+        DateTimeFormatter.ofPattern("MMM", locale).format(yearMonth).trimEnd('.')
+
     fun toLocalDate(epochMillis: Long): LocalDate =
         Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
 

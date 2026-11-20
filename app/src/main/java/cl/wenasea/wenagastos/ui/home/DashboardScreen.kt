@@ -25,9 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
+import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
-import cl.wenasea.wenagastos.domain.transferEnds
+import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LocalContainer
@@ -37,6 +38,12 @@ import cl.wenasea.wenagastos.ui.common.ShareBar
 import cl.wenasea.wenagastos.ui.common.TransactionRow
 import cl.wenasea.wenagastos.ui.common.VmFactories
 import cl.wenasea.wenagastos.ui.common.asColor
+import cl.wenasea.wenagastos.ui.common.budgetColor
+import cl.wenasea.wenagastos.ui.common.budgetPercentLabel
+import cl.wenasea.wenagastos.ui.common.budgetRemainingLabel
+import cl.wenasea.wenagastos.ui.common.categoryColor
+import cl.wenasea.wenagastos.ui.common.categoryEmoji
+import cl.wenasea.wenagastos.ui.common.transactionSubtitle
 import cl.wenasea.wenagastos.ui.ledger.LedgerUiState
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
 
@@ -45,6 +52,7 @@ fun DashboardScreen(
     modifier: Modifier = Modifier,
     onSeeAllMovements: () -> Unit = {},
     onOpenTransaction: (Long) -> Unit = {},
+    onSeeReports: () -> Unit = {},
 ) {
     val container = LocalContainer.current
     val viewModel: LedgerViewModel = viewModel(factory = VmFactories.ledger(container))
@@ -81,6 +89,10 @@ fun DashboardScreen(
         }
 
         item { MonthSummaryCard(state) }
+
+        if (state.budgetAlerts.isNotEmpty()) {
+            item { BudgetAlertsCard(alerts = state.budgetAlerts, onSeeReports = onSeeReports) }
+        }
 
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -223,20 +235,69 @@ private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier
 }
 
 internal fun LedgerUiState.emojiFor(transaction: TransactionEntity): String =
-    transaction.categoryId?.let { categories[it]?.emoji } ?: "❓"
+    categoryEmoji(transaction, categories)
 
 internal fun LedgerUiState.colorFor(transaction: TransactionEntity): Color =
-    transaction.categoryId?.let { categories[it]?.colorHex?.asColor() } ?: Color.Gray
+    categoryColor(transaction, categories)
 
-internal fun LedgerUiState.subtitleFor(transaction: TransactionEntity): String {
-    val category = transaction.categoryId?.let { categories[it]?.name } ?: "Sin categoría"
-    val account = accounts[transaction.accountId]?.name ?: "Cuenta"
-    // Un traspaso se lee igual desde las dos patas: "Santander → Falabella".
-    if (transaction.isTransfer && transaction.transferAccountId != null) {
-        val ends = transaction.transferEnds()
-        val origin = ends.originId?.let { accounts[it]?.name }
-        val destination = ends.destinationId?.let { accounts[it]?.name }
-        if (origin != null && destination != null) return "$category · $origin → $destination"
+internal fun LedgerUiState.subtitleFor(transaction: TransactionEntity): String =
+    transactionSubtitle(transaction, categories, accounts)
+
+/**
+ * Aviso de presupuestos en el inicio: solo aparece cuando alguna categoría del mes llegó al 80 %
+ * del tope. Los números son los mismos que en Reportes, así que editar o borrar un movimiento
+ * corrige el aviso al instante.
+ */
+@Composable
+private fun BudgetAlertsCard(alerts: List<CategoryTotal>, onSeeReports: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            SectionHeader(
+                title = "Presupuestos",
+                actionLabel = "Ver reportes",
+                onAction = onSeeReports,
+            )
+            alerts.forEach { total ->
+                val status = total.budget ?: return@forEach
+                val levelColor = budgetColor(status.level)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CategoryAvatar(
+                        emoji = total.category?.emoji ?: "❓",
+                        color = total.category?.colorHex?.asColor() ?: Color.Gray,
+                        size = 30,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = total.category?.name ?: "Sin categoría",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                text = budgetPercentLabel(status),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = levelColor,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        BudgetProgress(status = status)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = budgetRemainingLabel(status),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = levelColor,
+                        )
+                    }
+                }
+            }
+        }
     }
-    return "$category · $account"
 }
+

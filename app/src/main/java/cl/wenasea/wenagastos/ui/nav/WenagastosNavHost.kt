@@ -21,12 +21,14 @@ import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsScreen
 import cl.wenasea.wenagastos.ui.editor.TransactionEditorScreen
 import cl.wenasea.wenagastos.ui.home.DashboardScreen
 import cl.wenasea.wenagastos.ui.movements.MovementsScreen
+import cl.wenasea.wenagastos.ui.reports.ReportsScreen
 import cl.wenasea.wenagastos.ui.settings.MerchantRulesScreen
 import cl.wenasea.wenagastos.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
     const val MOVEMENTS = "movements"
+    const val REPORTS = "reports"
     const val SETTINGS = "settings"
     const val RULES = "rules"
     const val CAPTURE = "capture"
@@ -40,6 +42,7 @@ private data class Tab(val route: String, val label: String, val emoji: String)
 private val tabs = listOf(
     Tab(Routes.HOME, "Inicio", "🏠"),
     Tab(Routes.MOVEMENTS, "Movimientos", "🧾"),
+    Tab(Routes.REPORTS, "Reportes", "📊"),
     Tab(Routes.SETTINGS, "Ajustes", "⚙️"),
 )
 
@@ -50,6 +53,7 @@ fun WenagastosNavHost() {
     val currentRoute = backStackEntry?.destination?.route
     val showChrome = currentRoute == Routes.HOME ||
         currentRoute == Routes.MOVEMENTS ||
+        currentRoute == Routes.REPORTS ||
         currentRoute == Routes.SETTINGS
 
     Scaffold(
@@ -90,10 +94,16 @@ fun WenagastosNavHost() {
                 DashboardScreen(
                     onSeeAllMovements = { navController.navigate(Routes.MOVEMENTS) },
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
+                    onSeeReports = { navController.navigate(Routes.REPORTS) },
                 )
             }
             composable(Routes.MOVEMENTS) {
                 MovementsScreen(
+                    onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
+                )
+            }
+            composable(Routes.REPORTS) {
+                ReportsScreen(
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
                 )
             }

@@ -55,6 +55,17 @@ class CategoryRepository(private val dao: CategoryDao) {
 
     suspend fun update(category: CategoryEntity) = dao.update(category)
 
+    /**
+     * Presupuesto mensual de una categoría. `null` (o 0) lo deja sin presupuesto; el resto de los
+     * campos se conserva, así cambiar el monto no toca el nombre ni el color.
+     */
+    suspend fun setMonthlyBudget(id: Long, budget: Long?) {
+        val category = dao.getById(id) ?: return
+        val clean = budget?.takeIf { it > 0L }
+        if (category.monthlyBudget == clean) return
+        dao.update(category.copy(monthlyBudget = clean))
+    }
+
     suspend fun count() = dao.count()
 }
 

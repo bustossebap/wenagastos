@@ -6,11 +6,12 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
-import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Reports
 import java.time.YearMonth
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,8 @@ data class LedgerUiState(
     val income: Long = 0L,
     val pendingCount: Int = 0,
     val slices: List<CategorySlice> = emptyList(),
+    /** Categorías del mes que ya están cerca del límite o pasadas: la tarjeta de presupuestos. */
+    val budgetAlerts: List<CategoryTotal> = emptyList(),
     val transactions: List<TransactionEntity> = emptyList(),
     val accounts: Map<Long, AccountEntity> = emptyMap(),
     val categories: Map<Long, CategoryEntity> = emptyMap(),
@@ -87,9 +90,9 @@ class LedgerViewModel(
     ): LedgerUiState {
         // Los movimientos "Por revisar" (PENDING) no suman: todavía no se sabe con certeza
         // con qué cuenta se pagó, así que esperan en la tarjeta "Por revisar" del inicio.
-        val counted = monthTransactions.filter {
-            it.status == TransactionStatus.CONFIRMED && !it.isTransfer
-        }
+        // Los traspasos tampoco: la plata no se gastó, solo cambió de cuenta. La misma regla
+        // vive en `Reports.counted` para que Reportes diga exactamente lo mismo.
+        val counted = Reports.counted(monthTransactions)
 
         val expenses = counted.filter { it.direction == Direction.DEBIT }.sumOf { it.amount }
         val income = counted.filter { it.direction == Direction.CREDIT }.sumOf { it.amount }
@@ -113,6 +116,7 @@ class LedgerViewModel(
             income = income,
             pendingCount = pending,
             slices = byCategory,
+            budgetAlerts = Reports.budgetAlerts(monthTransactions, allCategories),
             transactions = monthTransactions,
             accounts = allAccounts.associateBy { it.id },
             categories = allCategories.associateBy { it.id },

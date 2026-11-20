@@ -8,6 +8,7 @@ import cl.wenasea.wenagastos.AppContainer
 import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsViewModel
 import cl.wenasea.wenagastos.ui.editor.EditorViewModel
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
+import cl.wenasea.wenagastos.ui.reports.ReportsViewModel
 import cl.wenasea.wenagastos.ui.settings.MerchantRulesViewModel
 import cl.wenasea.wenagastos.ui.settings.SettingsViewModel
 
@@ -39,6 +40,12 @@ object VmFactories {
     fun settings(container: AppContainer) = viewModelFactory {
         initializer {
             SettingsViewModel(container.accounts, container.categories, container.captureLogs)
+        }
+    }
+
+    fun reports(container: AppContainer) = viewModelFactory {
+        initializer {
+            ReportsViewModel(container.transactions, container.categories, container.accounts)
         }
     }
 
