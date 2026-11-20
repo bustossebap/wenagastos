@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.capture
 
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.domain.TextNorm
 
 /**
  * Decide si el movimiento saca o mete plata, según el verbo de la notificación.

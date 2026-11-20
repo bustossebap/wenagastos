@@ -8,6 +8,7 @@ import cl.wenasea.wenagastos.data.local.WenagastosDatabase
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
+import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,9 +33,10 @@ class AppContainer(application: Application) {
     val categories = CategoryRepository(database.categoryDao())
     val transactions = TransactionRepository(database.transactionDao())
     val captureLogs = CaptureLogRepository(database.captureLogDao())
+    val rules = MerchantRuleRepository(database.merchantRuleDao(), categories)
 
     /** Motor que traduce notificaciones del banco en movimientos. */
-    val capture = CaptureEngine(transactions, accounts, categories, captureLogs)
+    val capture = CaptureEngine(transactions, accounts, categories, rules, captureLogs)
 }
 
 class WenagastosApp : Application() {

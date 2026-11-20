@@ -3,6 +3,7 @@ package cl.wenasea.wenagastos.capture
 import cl.wenasea.wenagastos.capture.fakes.FakeAccountDao
 import cl.wenasea.wenagastos.capture.fakes.FakeCaptureLogDao
 import cl.wenasea.wenagastos.capture.fakes.FakeCategoryDao
+import cl.wenasea.wenagastos.capture.fakes.FakeMerchantRuleDao
 import cl.wenasea.wenagastos.capture.fakes.FakeTransactionDao
 import cl.wenasea.wenagastos.data.Seeder
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
@@ -11,12 +12,14 @@ import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
+import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
+import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -43,6 +46,7 @@ class CaptureEngineTest {
     private lateinit var categories: FakeCategoryDao
     private lateinit var txDao: FakeTransactionDao
     private lateinit var logDao: FakeCaptureLogDao
+    private lateinit var ruleDao: FakeMerchantRuleDao
 
     private var ctaCteId = 0L
     private var debitoId = 0L
@@ -51,7 +55,10 @@ class CaptureEngineTest {
     private var restaurantesId = 0L
     private var otrosIngresosId = 0L
     private var entreCuentasId = 0L
+    private var saludId = 0L
+    private var sueldoId = 0L
 
+    private lateinit var rulesRepo: MerchantRuleRepository
     private lateinit var engine: CaptureEngine
 
     private val baseTime = 1_700_000_000_000L
@@ -65,6 +72,7 @@ class CaptureEngineTest {
         categories = FakeCategoryDao()
         txDao = FakeTransactionDao()
         logDao = FakeCaptureLogDao()
+        ruleDao = FakeMerchantRuleDao()
 
         val ids = accounts.seed(
             AccountEntity(
@@ -96,11 +104,15 @@ class CaptureEngineTest {
         restaurantesId = categories.stored.first { it.name == "Restaurantes" }.id
         otrosIngresosId = categories.stored.first { it.name == "Otros ingresos" }.id
         entreCuentasId = categories.stored.first { it.name == "Entre cuentas" }.id
+        saludId = categories.stored.first { it.name == "Salud" }.id
+        sueldoId = categories.stored.first { it.name == "Sueldo" }.id
 
+        rulesRepo = MerchantRuleRepository(ruleDao, CategoryRepository(categories))
         engine = CaptureEngine(
             TransactionRepository(txDao),
             AccountRepository(accounts),
             CategoryRepository(categories),
+            rulesRepo,
             CaptureLogRepository(logDao),
         )
     }
@@ -526,6 +538,89 @@ class CaptureEngineTest {
             assertEquals(1, txDao.stored.size)
         }
     }
+    @Test
+    fun `una regla del usuario gana sobre la semilla del catalogo`() {
+        runBlocking {
+            rulesRepo.remember("FARMACIA AHUMADA", Direction.DEBIT, restaurantesId)
+
+            val outcome = engine.handle(
+                notif(
+                    text = "Compraste \$8.990 en FARMACIA AHUMADA con tu tarjeta de débito " +
+                        "terminada en 4321",
+                ),
+            )
+
+            assertEquals(CaptureOutcome.SAVED, outcome)
+            // La semilla diría "Salud"; la corrección del usuario manda.
+            assertEquals(restaurantesId, txDao.stored.single().categoryId)
+        }
+    }
+
+    @Test
+    fun `una regla con la categoria borrada se ignora y vuelve la semilla`() {
+        runBlocking {
+            ruleDao.insert(
+                MerchantRuleEntity(
+                    merchantKey = "farmacia ahumada",
+                    merchantLabel = "FARMACIA AHUMADA",
+                    direction = Direction.DEBIT,
+                    categoryId = 999L,
+                ),
+            )
+
+            engine.handle(
+                notif(
+                    text = "Compraste \$8.990 en FARMACIA AHUMADA con tu tarjeta de débito " +
+                        "terminada en 4321",
+                ),
+            )
+
+            assertEquals(saludId, txDao.stored.single().categoryId)
+        }
+    }
+
+    @Test
+    fun `la regla de un sentido no se aplica al sentido contrario`() {
+        runBlocking {
+            rulesRepo.remember("JUAN PEREZ", Direction.DEBIT, restaurantesId)
+            rulesRepo.remember("JUAN PEREZ", Direction.CREDIT, sueldoId)
+
+            // La plata entra: usa la regla de ingresos.
+            engine.handle(notif(text = "Recibiste una transferencia de JUAN PEREZ por \$25.000"))
+            // La plata sale: usa la regla de gastos, no la de ingresos.
+            engine.handle(
+                notif(
+                    text = "Transferiste \$18.000 a JUAN PEREZ desde tu cuenta terminada en 4321",
+                    at = baseTime + 60_000,
+                ),
+            )
+
+            val rows = txDao.stored.sortedBy { it.occurredAt }
+            assertEquals(Direction.CREDIT, rows[0].direction)
+            assertEquals(sueldoId, rows[0].categoryId)
+            assertEquals(Direction.DEBIT, rows[1].direction)
+            assertEquals(restaurantesId, rows[1].categoryId)
+        }
+    }
+
+    @Test
+    fun `un traspaso no usa la regla del comercio`() {
+        runBlocking {
+            engine.handle(notif(text = traspasoDesdeOtra))
+            val first = txDao.stored.single()
+            assertEquals(entreCuentasId, first.categoryId)
+
+            // Aunque se recuerde otra categoría para ese texto, un traspaso sigue siendo traspaso.
+            rulesRepo.remember(first.merchantRaw, first.direction, restaurantesId)
+            engine.handle(notif(text = traspasoSale, at = baseTime + 60_000))
+
+            assertEquals(2, txDao.stored.size)
+            assertTrue(txDao.stored.all { it.isTransfer })
+            assertTrue(txDao.stored.all { it.categoryId == entreCuentasId })
+        }
+    }
+
+
 
     private companion object {
         const val SANTANDER = "cl.santander.smartphone"

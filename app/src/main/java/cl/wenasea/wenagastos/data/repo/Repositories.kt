@@ -3,12 +3,15 @@ package cl.wenasea.wenagastos.data.repo
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
+import cl.wenasea.wenagastos.data.local.dao.MerchantRuleDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
+import cl.wenasea.wenagastos.domain.TextNorm
 
 class AccountRepository(private val dao: AccountDao) {
 
@@ -53,6 +56,81 @@ class CategoryRepository(private val dao: CategoryDao) {
     suspend fun update(category: CategoryEntity) = dao.update(category)
 
     suspend fun count() = dao.count()
+}
+
+/**
+ * Reglas por comercio: lo que el usuario corrige se recuerda y gana sobre la semilla
+ * `MerchantCategories`. Una regla cuya categoría se archivó o desapareció se ignora, así el
+ * motor cae a la semilla en vez de dejar el movimiento sin categoría válida.
+ */
+class MerchantRuleRepository(
+    private val dao: MerchantRuleDao,
+    private val categories: CategoryRepository,
+) {
+
+    fun observeAll() = dao.observeAll()
+
+    suspend fun count() = dao.count()
+
+    /** La regla guardada para [merchant], sin validar la categoría (la usa el editor). */
+    suspend fun ruleFor(merchant: String, direction: Direction): MerchantRuleEntity? {
+        val key = TextNorm.key(merchant)
+        if (key.isEmpty()) return null
+        return dao.find(key, direction.name)
+    }
+
+    /** Categoría recordada para [merchant] en ese sentido, si la regla sigue vigente. */
+    suspend fun resolve(merchant: String, direction: Direction): Long? {
+        val categoryId = ruleFor(merchant, direction)?.categoryId ?: return null
+        val stillActive = categories.listActive().any { it.id == categoryId }
+        return if (stillActive) categoryId else null
+    }
+
+    /**
+     * Aprende la categoría de [merchant]. Si ya había una regla para ese comercio y sentido se
+     * corrige y suma un uso: nunca se duplica.
+     */
+    suspend fun remember(merchant: String, direction: Direction, categoryId: Long) {
+        val key = TextNorm.key(merchant)
+        if (key.isEmpty() || categoryId <= 0L) return
+        val label = merchant.trim().take(LABEL_MAX)
+        val now = System.currentTimeMillis()
+        val existing = dao.find(key, direction.name)
+        if (existing == null) {
+            dao.insert(
+                MerchantRuleEntity(
+                    merchantKey = key,
+                    merchantLabel = label,
+                    direction = direction,
+                    categoryId = categoryId,
+                    createdAt = now,
+                    updatedAt = now,
+                ),
+            )
+        } else {
+            dao.update(
+                existing.copy(
+                    merchantLabel = label,
+                    categoryId = categoryId,
+                    uses = existing.uses + 1,
+                    updatedAt = now,
+                ),
+            )
+        }
+    }
+
+    suspend fun forget(id: Long) = dao.deleteById(id)
+
+    /** Cambia la categoría de una regla sin sumar un uso: no la enseñó el motor, la editaste tú. */
+    suspend fun updateCategory(rule: MerchantRuleEntity, categoryId: Long) {
+        if (categoryId <= 0L) return
+        dao.update(rule.copy(categoryId = categoryId, updatedAt = System.currentTimeMillis()))
+    }
+
+    private companion object {
+        /** Los nombres de comercio de los bancos son cortos; el resto suele ser relleno. */
+        const val LABEL_MAX = 60
+    }
 }
 
 class TransactionRepository(private val dao: TransactionDao) {

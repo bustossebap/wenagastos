@@ -12,7 +12,9 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
+import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.TextNorm
 import cl.wenasea.wenagastos.domain.opposite
 import java.security.MessageDigest
 import kotlinx.coroutines.sync.Mutex
@@ -29,6 +31,8 @@ import kotlinx.coroutines.sync.withLock
  *   y después el banco: en ese caso se completa el movimiento existente con los datos del banco.
  * - Un traspaso entre cuentas propias se registra con `isTransfer`: no suma en gastos ni ingresos,
  *   porque la plata no se gastó, solo cambió de cuenta.
+ * - La categoría sale de la regla que el usuario enseñó para ese comercio (Fase 3) y, si no hay,
+ *   de la semilla de `MerchantCategories`.
  *
  * [handle] está serializado con un [Mutex]: dos avisos que llegan juntos (el banco parte el
  * traspaso en "desde" y "hacia", o Wallet y el banco avisan lo mismo) se evalúan uno por uno,
@@ -38,6 +42,7 @@ class CaptureEngine(
     private val transactions: TransactionRepository,
     private val accounts: AccountRepository,
     private val categories: CategoryRepository,
+    private val rules: MerchantRuleRepository,
     private val logs: CaptureLogRepository,
 ) {
 
@@ -221,6 +226,10 @@ class CaptureEngine(
         // Un traspaso no es gasto ni ingreso: va a la categoría de tipo TRANSFER ("Entre cuentas").
         if (parsed.isTransfer) {
             return active.firstOrNull { it.kind == CategoryKind.TRANSFER }?.id
+        }
+        // Lo que el usuario enseñó para ese comercio manda sobre la semilla del catálogo.
+        if (parsed.merchantFound) {
+            rules.resolve(parsed.merchant, parsed.direction)?.let { return it }
         }
         val name = MerchantCategories.categoryFor(parsed.merchant, parsed.direction, parsed.rawText)
             ?: return null

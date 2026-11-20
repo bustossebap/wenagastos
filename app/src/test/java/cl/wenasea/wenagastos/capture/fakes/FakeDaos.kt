@@ -4,10 +4,12 @@ import cl.wenasea.wenagastos.data.local.dao.AccountDao
 import cl.wenasea.wenagastos.data.local.dao.AccountMovementCount
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
+import cl.wenasea.wenagastos.data.local.dao.MerchantRuleDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
+import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.numbers
@@ -255,6 +257,45 @@ class FakeCategoryDao : CategoryDao {
         rows[category.id] = category
         publish()
     }
+}
+
+class FakeMerchantRuleDao : MerchantRuleDao {
+
+    private val rows = linkedMapOf<Long, MerchantRuleEntity>()
+    private val state = MutableStateFlow<List<MerchantRuleEntity>>(emptyList())
+    private var nextId = 1L
+
+    val stored: List<MerchantRuleEntity> get() = rows.values.toList()
+
+    private fun publish() {
+        state.value = rows.values.sortedWith(
+            compareByDescending<MerchantRuleEntity> { it.uses }.thenBy { it.merchantLabel },
+        )
+    }
+
+    override fun observeAll(): Flow<List<MerchantRuleEntity>> = state
+
+    override suspend fun find(key: String, direction: String): MerchantRuleEntity? =
+        rows.values.firstOrNull { it.merchantKey == key && it.direction.name == direction }
+
+    override suspend fun insert(rule: MerchantRuleEntity): Long {
+        val id = if (rule.id == 0L) nextId++ else rule.id
+        rows[id] = rule.copy(id = id)
+        publish()
+        return id
+    }
+
+    override suspend fun update(rule: MerchantRuleEntity) {
+        rows[rule.id] = rule
+        publish()
+    }
+
+    override suspend fun deleteById(id: Long) {
+        rows.remove(id)
+        publish()
+    }
+
+    override suspend fun count(): Int = rows.size
 }
 
 class FakeCaptureLogDao : CaptureLogDao {

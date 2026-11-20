@@ -91,3 +91,41 @@ data class TransactionEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
 )
+
+/**
+ * Regla aprendida: la categoría que el usuario eligió para un comercio.
+ *
+ * La clave es el comercio normalizado (`TextNorm.key`) **más el sentido**, porque el mismo
+ * nombre puede ser gasto ("Transferiste a MARIA") e ingreso ("Recibiste de MARIA") y cada uno
+ * tiene su propia categoría. `categoryId` es `SET_NULL`: si la categoría se borra, la regla
+ * queda huérfana y el motor la ignora en vez de romper.
+ */
+@Entity(
+    tableName = "merchant_rules",
+    indices = [
+        Index(value = ["merchantKey", "direction"], unique = true),
+        // Room exige índice para la FK: sin él, borrar una categoría escanea la tabla completa.
+        Index("categoryId"),
+    ],
+    foreignKeys = [
+        ForeignKey(
+            entity = CategoryEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["categoryId"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+)
+data class MerchantRuleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** Comercio normalizado: `TextNorm.key(merchant)`. */
+    val merchantKey: String,
+    /** El comercio tal como aparece en el aviso, para mostrarlo en Ajustes. */
+    val merchantLabel: String,
+    val direction: Direction,
+    val categoryId: Long? = null,
+    /** Cuántas veces se ha aplicado o corregido la regla. Ordena la lista de Ajustes. */
+    val uses: Int = 1,
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+)

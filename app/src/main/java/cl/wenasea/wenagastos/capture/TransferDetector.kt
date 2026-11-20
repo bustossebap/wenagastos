@@ -1,5 +1,7 @@
 package cl.wenasea.wenagastos.capture
 
+import cl.wenasea.wenagastos.domain.TextNorm
+
 /**
  * Reconoce los traspasos entre cuentas propias ("Transferencia desde/hacia tu cuenta").
  *

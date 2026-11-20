@@ -1,5 +1,7 @@
 package cl.wenasea.wenagastos.capture
 
+import cl.wenasea.wenagastos.domain.TextNorm
+
 /**
  * Extrae el comercio (o el destinatario de una transferencia) del texto de la notificación.
  *

@@ -9,10 +9,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
+import cl.wenasea.wenagastos.data.local.dao.MerchantRuleDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
+import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 
 @Database(
@@ -21,11 +23,16 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
         CategoryEntity::class,
         TransactionEntity::class,
         CaptureLogEntity::class,
+        MerchantRuleEntity::class,
     ],
     version = WenagastosDatabase.VERSION,
     exportSchema = true,
-    // Fase 4: columna `transferAccountId` (la otra pata del traspaso) e índice.
-    autoMigrations = [AutoMigration(from = 2, to = 3)],
+    autoMigrations = [
+        // Fase 4: columna `transferAccountId` (la otra pata del traspaso) e índice.
+        AutoMigration(from = 2, to = 3),
+        // Fase 3: tabla `merchant_rules` (categoría aprendida por comercio) e índice único.
+        AutoMigration(from = 3, to = 4),
+    ],
 )
 @TypeConverters(Converters::class)
 abstract class WenagastosDatabase : RoomDatabase() {
@@ -38,9 +45,11 @@ abstract class WenagastosDatabase : RoomDatabase() {
 
     abstract fun captureLogDao(): CaptureLogDao
 
+    abstract fun merchantRuleDao(): MerchantRuleDao
+
     companion object {
         const val NAME = "wenagastos.db"
-        const val VERSION = 3
+        const val VERSION = 4
 
         /** Fase 2: tabla de diagnóstico de la captura por notificaciones. */
         val MIGRATION_1_2 = object : Migration(1, 2) {

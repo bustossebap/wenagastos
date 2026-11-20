@@ -1,4 +1,4 @@
-package cl.wenasea.wenagastos.capture
+package cl.wenasea.wenagastos.domain
 
 import java.text.Normalizer
 

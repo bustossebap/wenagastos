@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.capture
 
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.domain.TextNorm
 
 /** Resultado de leer una notificación bancaria. */
 data class ParsedNotification(

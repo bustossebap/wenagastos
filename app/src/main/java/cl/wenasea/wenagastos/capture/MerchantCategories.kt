@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.capture
 
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.domain.TextNorm
 
 /**
  * Semilla de categorización por comercio, para que los movimientos capturados
