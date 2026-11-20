@@ -7,6 +7,7 @@ import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
+import cl.wenasea.wenagastos.domain.normalizeNumbers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -41,12 +42,10 @@ class SettingsViewModel(
         initialValue = SettingsUiState(),
     )
 
-    /** Guarda los últimos 4 dígitos de la tarjeta; con menos de 4 dígitos queda vacío. */
-    fun setLast4(account: AccountEntity, text: String) {
-        val digits = text.filter(Char::isDigit).take(4)
-        val last4 = digits.takeIf { it.length == 4 }
+    /** Guarda los números de 4 dígitos de la cuenta; sin ninguno válido queda vacío. */
+    fun setNumbers(account: AccountEntity, numbers: List<String>) {
         viewModelScope.launch {
-            accounts.update(account.copy(last4 = last4))
+            accounts.update(account.copy(last4 = normalizeNumbers(numbers)))
         }
     }
 }

@@ -9,6 +9,7 @@ import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
+import cl.wenasea.wenagastos.domain.numbers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -128,7 +129,7 @@ class FakeAccountDao : AccountDao {
         rows.values.filter { it.isActive }.sortedBy { it.id }
 
     override suspend fun findByLast4(last4: String): AccountEntity? = rows.values
-        .filter { it.isActive && it.last4 == last4 }
+        .filter { it.isActive && it.numbers().contains(last4) }
         .minByOrNull { it.id }
 
     override suspend fun getById(id: Long): AccountEntity? = rows[id]

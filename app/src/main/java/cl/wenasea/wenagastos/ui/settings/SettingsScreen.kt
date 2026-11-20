@@ -19,6 +19,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
+import cl.wenasea.wenagastos.domain.numbers
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
@@ -130,8 +132,9 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp)) {
                     SectionHeader(title = "Cuentas (${state.accounts.size})")
                     Text(
-                        text = "Toca una cuenta para asociar los últimos 4 dígitos de su tarjeta: " +
-                            "así cada aviso del banco cae en la cuenta correcta.",
+                        text = "Toca una cuenta para asociar los 4 dígitos que aparecen en sus " +
+                            "avisos: los de la tarjeta en una compra y los de la cuenta en una " +
+                            "transferencia. Puede tener más de uno.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -161,7 +164,11 @@ fun SettingsScreen(
                                         append(" · ")
                                         append(account.kind.label)
                                         append(" · ")
-                                        append(account.last4?.let { "•••• $it" } ?: "sin tarjeta")
+                                        append(
+                                            account.numbers()
+                                                .joinToString(" · ") { "•••• $it" }
+                                                .ifEmpty { "sin números" },
+                                        )
                                     },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -224,51 +231,98 @@ fun SettingsScreen(
     }
 
     editingAccount?.let { account ->
-        Last4Dialog(
+        AccountNumbersDialog(
             account = account,
             onDismiss = { editingAccount = null },
-            onSave = { text ->
-                viewModel.setLast4(account, text)
+            onSave = { numbers ->
+                viewModel.setNumbers(account, numbers)
                 editingAccount = null
             },
         )
     }
 }
 
-/** Diálogo para asociar los últimos 4 dígitos de la tarjeta a una cuenta. */
+/**
+ * Diálogo para administrar los números de 4 dígitos de una cuenta: los de la tarjeta en las
+ * compras y los de la cuenta en las transferencias. Se pueden tener varios.
+ */
 @Composable
-private fun Last4Dialog(
+private fun AccountNumbersDialog(
     account: AccountEntity,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (List<String>) -> Unit,
 ) {
-    var text by remember(account.id) { mutableStateOf(account.last4.orEmpty()) }
+    val numbers = remember(account.id) {
+        mutableStateListOf<String>().apply { addAll(account.numbers()) }
+    }
+    var draft by remember(account.id) { mutableStateOf("") }
+
+    fun addDraft() {
+        val digits = draft.filter(Char::isDigit).take(4)
+        if (digits.length == 4 && digits !in numbers) numbers.add(digits)
+        draft = ""
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Tarjeta de ${account.name}") },
+        title = { Text("Números de ${account.name}") },
         text = {
             Column {
                 Text(
-                    text = "Escribe los últimos 4 dígitos que aparecen en los avisos " +
-                        "(ej. \"tarjeta terminada en 4321\"). Déjalo vacío para borrarlo.",
+                    text = "Agrega los 4 dígitos que el banco muestra en los avisos de esta " +
+                        "cuenta: los de la tarjeta en una compra y los de la cuenta en una " +
+                        "transferencia (ej. \"tarjeta terminada en 4321\").",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { input ->
-                        text = input.filter(Char::isDigit).take(4)
-                    },
-                    label = { Text("Últimos 4 dígitos") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.padding(top = 12.dp),
-                )
+                if (numbers.isEmpty()) {
+                    Text(
+                        text = "Todavía no tiene números: sus avisos quedarán en Por revisar.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                numbers.forEach { number ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "•••• $number",
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = { numbers.remove(number) }) {
+                            Text("Quitar")
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = draft,
+                        onValueChange = { input ->
+                            draft = input.filter(Char::isDigit).take(4)
+                        },
+                        label = { Text("Últimos 4 dígitos") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { addDraft() }, enabled = draft.length == 4) {
+                        Text("Agregar")
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(text) }) {
+            TextButton(onClick = { onSave(numbers.toList()) }) {
                 Text("Guardar")
             }
         },

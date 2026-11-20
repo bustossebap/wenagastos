@@ -141,7 +141,51 @@ class CaptureEngineTest {
             val row = txDao.stored.single()
             assertEquals(TransactionStatus.PENDING, row.status)
             assertEquals(ctaCteId, row.accountId)
-            assertEquals("Asigna la tarjeta *9999 a una cuenta. Revisa y confirma.", row.notes)
+            assertEquals("Asigna el número *9999 a una cuenta. Revisa y confirma.", row.notes)
+        }
+    }
+
+    @Test
+    fun `una cuenta con dos numeros reconoce la tarjeta y el numero de cuenta`() {
+        runBlocking {
+            accounts.update(accounts.getById(debitoId)!!.copy(last4 = "4321,5678"))
+
+            // Compra con la tarjeta de débito: el primer número de la lista.
+            assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = compraDebito)))
+
+            // Transferencia desde la cuenta: el segundo número de la misma lista.
+            assertEquals(
+                CaptureOutcome.SAVED,
+                engine.handle(
+                    notif(
+                        text = "Transferiste \$50.000 a MARIA SOTO desde tu cuenta terminada en 5678",
+                        at = baseTime + 60_000,
+                    ),
+                ),
+            )
+
+            assertEquals(2, txDao.stored.size)
+            assertTrue(txDao.stored.all { it.accountId == debitoId })
+            assertTrue(txDao.stored.all { it.status == TransactionStatus.CONFIRMED })
+            assertTrue(txDao.stored.all { it.notes == null })
+        }
+    }
+
+    @Test
+    fun `un numero parecido no completa el movimiento`() {
+        runBlocking {
+            accounts.update(accounts.getById(debitoId)!!.copy(last4 = "4321,5678"))
+
+            val outcome = engine.handle(
+                notif(
+                    text = "Compraste \$3.000 en JUMBO COSTA con tu tarjeta de débito terminada en 8765",
+                ),
+            )
+
+            assertEquals(CaptureOutcome.PENDING, outcome)
+            val row = txDao.stored.single()
+            assertEquals(ctaCteId, row.accountId)
+            assertEquals("Asigna el número *8765 a una cuenta. Revisa y confirma.", row.notes)
         }
     }
 

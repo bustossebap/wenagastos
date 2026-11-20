@@ -19,7 +19,15 @@ interface AccountDao {
     @Query("SELECT * FROM accounts WHERE isActive = 1 ORDER BY id ASC")
     suspend fun getAllActive(): List<AccountEntity>
 
-    @Query("SELECT * FROM accounts WHERE last4 = :last4 AND isActive = 1 ORDER BY id ASC LIMIT 1")
+    /**
+     * Busca una cuenta activa por número exacto. `last4` guarda una lista separada por comas,
+     * así que se compara con los delimitadores puestos: `1234` no matchea dentro de otro número.
+     */
+    @Query(
+        "SELECT * FROM accounts WHERE isActive = 1 " +
+            "AND ',' || last4 || ',' LIKE '%,' || :last4 || ',%' " +
+            "ORDER BY id ASC LIMIT 1",
+    )
     suspend fun findByLast4(last4: String): AccountEntity?
 
     @Query("SELECT * FROM accounts WHERE id = :id")

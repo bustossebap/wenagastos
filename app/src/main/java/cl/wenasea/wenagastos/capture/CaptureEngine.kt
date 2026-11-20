@@ -165,7 +165,7 @@ class CaptureEngine(
             return AccountChoice(
                 account = chosen,
                 isPlaceholder = last4 != null,
-                reason = last4?.let { "Asigna la tarjeta *$it a una cuenta" },
+                reason = last4?.let { "Asigna el número *$it a una cuenta" },
             )
         }
 

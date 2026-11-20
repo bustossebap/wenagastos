@@ -14,6 +14,11 @@ data class AccountEntity(
     val name: String,
     val institution: Institution,
     val kind: AccountKind,
+    /**
+     * Números de 4 dígitos que el banco muestra en los avisos de esta cuenta, separados por
+     * coma: el de la tarjeta en las compras y el de la cuenta en las transferencias.
+     * Ej. `"5678,1234"`. El cruce con los avisos se hace por número exacto, no por parecido.
+     */
     val last4: String? = null,
     val colorHex: String,
     val isActive: Boolean = true,
