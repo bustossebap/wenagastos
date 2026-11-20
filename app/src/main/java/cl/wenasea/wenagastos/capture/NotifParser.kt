@@ -14,9 +14,11 @@ data class ParsedNotification(
     val source: BankSource,
     val occurredAt: Long,
     val rawText: String,
+    /** Traspaso entre cuentas propias: la plata no se gastó, solo cambió de cuenta. */
+    val isTransfer: Boolean = false,
 ) {
     /** Confianza suficiente para registrar el movimiento como confirmado. */
-    val isConfident: Boolean get() = amount > 0 && merchantFound
+    val isConfident: Boolean get() = amount > 0 && (merchantFound || isTransfer)
 }
 
 sealed interface ParseResult {
@@ -76,9 +78,17 @@ object NotifParser {
             ?: DirectionDetector.detect(text)
             ?: Direction.DEBIT
 
+        // Traspaso entre cuentas propias: sin destinatario, "tu cuenta" es el otro extremo.
         val extracted = MerchantExtractor.find(text)
+        val isTransfer = extracted == null && TransferDetector.isOwnAccountTransfer(text)
+
         val fallback = fallbackMerchant(raw, source)
-        val merchant = extracted ?: fallback.name
+        val merchant = when {
+            // Un traspaso entre cuentas propias no tiene comercio: se etiqueta por lo que es.
+            isTransfer -> TRANSFER_MERCHANT
+            extracted != null -> extracted
+            else -> fallback.name
+        }
 
         return ParseResult.Parsed(
             ParsedNotification(
@@ -91,6 +101,7 @@ object NotifParser {
                 source = source,
                 occurredAt = raw.postedAt,
                 rawText = text,
+                isTransfer = isTransfer,
             ),
         )
     }
@@ -124,4 +135,7 @@ object NotifParser {
         "tenpo",
         "banco de chile",
     )
+
+    /** Nombre con el que se muestra un traspaso entre cuentas propias (no hay comercio). */
+    private const val TRANSFER_MERCHANT = "Transferencia"
 }

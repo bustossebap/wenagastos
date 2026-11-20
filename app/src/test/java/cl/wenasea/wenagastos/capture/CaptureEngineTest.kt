@@ -17,8 +17,12 @@ import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -44,6 +48,7 @@ class CaptureEngineTest {
     private var supermercadoId = 0L
     private var restaurantesId = 0L
     private var otrosIngresosId = 0L
+    private var entreCuentasId = 0L
 
     private lateinit var engine: CaptureEngine
 
@@ -87,6 +92,7 @@ class CaptureEngineTest {
         supermercadoId = categories.stored.first { it.name == "Supermercado" }.id
         restaurantesId = categories.stored.first { it.name == "Restaurantes" }.id
         otrosIngresosId = categories.stored.first { it.name == "Otros ingresos" }.id
+        entreCuentasId = categories.stored.first { it.name == "Entre cuentas" }.id
 
         engine = CaptureEngine(
             TransactionRepository(txDao),
@@ -381,6 +387,90 @@ class CaptureEngineTest {
         }
     }
 
+    @Test
+    fun `un traspaso hacia mi cuenta usa el numero de cuenta y no suma`() {
+        runBlocking {
+            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+
+            assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = traspasoEntra)))
+
+            val row = txDao.stored.single()
+            assertEquals(ctaCteId, row.accountId)
+            assertEquals(40_000L, row.amount)
+            assertEquals(Direction.CREDIT, row.direction)
+            assertEquals("Transferencia", row.merchantRaw)
+            assertEquals(entreCuentasId, row.categoryId)
+            assertTrue(row.isTransfer)
+            assertFalse(row.isExpense)
+            assertEquals(TransactionStatus.CONFIRMED, row.status)
+            assertNull(row.notes)
+            assertEquals(
+                "traspaso de \$40.000 hacia Santander Cta. Cte.",
+                logDao.stored.last().detail,
+            )
+        }
+    }
+
+    @Test
+    fun `un traspaso desde mi cuenta sale como gasto pero no suma`() {
+        runBlocking {
+            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+
+            assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = traspasoSale)))
+
+            val row = txDao.stored.single()
+            assertEquals(ctaCteId, row.accountId)
+            assertEquals(Direction.DEBIT, row.direction)
+            assertTrue(row.isTransfer)
+            assertFalse(row.isExpense)
+            assertEquals(TransactionStatus.CONFIRMED, row.status)
+        }
+    }
+
+    @Test
+    fun `un traspaso de una cuenta que no esta registrada queda por revisar`() {
+        runBlocking {
+            assertEquals(CaptureOutcome.PENDING, engine.handle(notif(text = traspasoDesdeOtra)))
+
+            val row = txDao.stored.single()
+            assertEquals(ctaCteId, row.accountId)
+            assertEquals(Direction.DEBIT, row.direction)
+            assertTrue(row.isTransfer)
+            assertEquals("Asigna el número *7888 a una cuenta. Revisa y confirma.", row.notes)
+        }
+    }
+
+    @Test
+    fun `las dos patas de un traspaso se registran por separado`() {
+        runBlocking {
+            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+
+            // Mismo monto y mismo minuto: si el hash no mirara el sentido, una pata se perdería.
+            assertEquals(CaptureOutcome.PENDING, engine.handle(notif(text = traspasoDesdeOtra)))
+            assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = traspasoEntra)))
+
+            assertEquals(2, txDao.stored.size)
+            assertEquals(
+                setOf(Direction.DEBIT, Direction.CREDIT),
+                txDao.stored.map { it.direction }.toSet(),
+            )
+            assertTrue(txDao.stored.all { it.isTransfer })
+        }
+    }
+
+    @Test
+    fun `dos avisos iguales en paralelo no duplican el movimiento`() {
+        runBlocking {
+            val outcomes = (1..2).map {
+                async(Dispatchers.Default) { engine.handle(notif(text = compraDebito)) }
+            }.awaitAll()
+
+            assertEquals(1, outcomes.count { it == CaptureOutcome.SAVED })
+            assertEquals(1, outcomes.count { it == CaptureOutcome.DUPLICATE })
+            assertEquals(1, txDao.stored.size)
+        }
+    }
+
     private companion object {
         const val SANTANDER = "cl.santander.smartphone"
         const val FALABELLA = "com.falabella.falabellaApp"
@@ -389,5 +479,16 @@ class CaptureEngineTest {
         const val avisoWallet = "You paid CLP 12,500.00 at LIDER EXPRESS with Visa ••••8888"
         const val avisoBanco =
             "Compraste \$12.500 en LIDER EXPRESS con tu tarjeta de débito terminada en 4321"
+
+        /** Avisos reales de Santander: el banco parte el traspaso en las dos patas. */
+        const val traspasoEntra =
+            "El 20-11-2026 08:05:41 se realizó una Transferencia hacia tu cuenta " +
+                "000095441483 por \$ 40.000. Saludos"
+        const val traspasoDesdeOtra =
+            "El 20-11-2026 08:05:44 se realizó una Transferencia desde tu cuenta " +
+                "000093987888 por \$ 40.000."
+        const val traspasoSale =
+            "El 20-11-2026 08:08:00 se realizó una Transferencia desde tu cuenta " +
+                "000095441483 por \$ 22.000."
     }
 }

@@ -66,6 +66,7 @@ class EditorViewModel(
         accountId: Long?,
         categoryId: Long?,
         direction: Direction,
+        isTransfer: Boolean = false,
         occurredAtMillis: Long,
     ) {
         val amount = Money.parse(amountText)
@@ -96,7 +97,8 @@ class EditorViewModel(
             merchantRaw = cleanMerchant,
             merchantNorm = cleanMerchant.lowercase(),
             categoryId = categoryId,
-            isExpense = direction == Direction.DEBIT,
+            isExpense = direction == Direction.DEBIT && !isTransfer,
+            isTransfer = isTransfer,
             status = TransactionStatus.CONFIRMED,
             // El motivo del "por revisar" lo generó el motor: al guardar, el usuario ya decidió.
             notes = null,

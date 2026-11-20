@@ -4,6 +4,7 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
+import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
@@ -13,6 +14,8 @@ import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import java.security.MessageDigest
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Convierte notificaciones en movimientos.
@@ -23,6 +26,12 @@ import java.security.MessageDigest
  *   pero tampoco ensucia los totales.
  * - Si ya existe el mismo gasto (±5 min) → se descarta, salvo que llegue primero Google Wallet
  *   y después el banco: en ese caso se completa el movimiento existente con los datos del banco.
+ * - Un traspaso entre cuentas propias se registra con `isTransfer`: no suma en gastos ni ingresos,
+ *   porque la plata no se gastó, solo cambió de cuenta.
+ *
+ * [handle] está serializado con un [Mutex]: dos avisos que llegan juntos (el banco parte el
+ * traspaso en "desde" y "hacia", o Wallet y el banco avisan lo mismo) se evalúan uno por uno,
+ * así ninguno pasa la revisión de duplicados antes de que el otro se haya guardado.
  */
 class CaptureEngine(
     private val transactions: TransactionRepository,
@@ -37,7 +46,11 @@ class CaptureEngine(
         val reason: String? = null,
     )
 
-    suspend fun handle(raw: RawNotification): CaptureOutcome {
+    private val gate = Mutex()
+
+    suspend fun handle(raw: RawNotification): CaptureOutcome = gate.withLock { process(raw) }
+
+    private suspend fun process(raw: RawNotification): CaptureOutcome {
         val source = BankSource.of(raw.packageName) ?: return CaptureOutcome.IGNORED
 
         // Los resúmenes de grupo llegan vacíos: no hay nada que analizar ni que dejar en el registro.
@@ -90,6 +103,7 @@ class CaptureEngine(
                 existing.copy(
                     accountId = choice.account.id,
                     categoryId = existing.categoryId ?: categoryId,
+                    isTransfer = parsed.isTransfer,
                     merchantRaw = parsed.merchant,
                     merchantNorm = parsed.merchant.lowercase(),
                     notes = notes,
@@ -118,7 +132,8 @@ class CaptureEngine(
                 merchantNorm = parsed.merchant.lowercase(),
                 categoryId = categoryId,
                 status = status,
-                isExpense = parsed.direction == Direction.DEBIT,
+                isExpense = parsed.direction == Direction.DEBIT && !parsed.isTransfer,
+                isTransfer = parsed.isTransfer,
                 notes = notes,
                 source = if (source == BankSource.WALLET) {
                     TransactionSource.WALLET
@@ -181,17 +196,21 @@ class CaptureEngine(
     }
 
     private suspend fun resolveCategoryId(parsed: ParsedNotification): Long? {
+        val active = categories.listActive()
+        // Un traspaso no es gasto ni ingreso: va a la categoría de tipo TRANSFER ("Entre cuentas").
+        if (parsed.isTransfer) {
+            return active.firstOrNull { it.kind == CategoryKind.TRANSFER }?.id
+        }
         val name = MerchantCategories.categoryFor(parsed.merchant, parsed.direction, parsed.rawText)
             ?: return null
         val wanted = TextNorm.plain(name)
-        return categories.listActive()
-            .firstOrNull { TextNorm.plain(it.name) == wanted }
-            ?.id
+        return active.firstOrNull { TextNorm.plain(it.name) == wanted }?.id
     }
 
     private fun buildNotes(parsed: ParsedNotification, choice: AccountChoice): String? {
         val reasons = buildList {
-            if (!parsed.merchantFound) add("No pude leer el comercio")
+            // Un traspaso no tiene comercio: avisar que falta sería ruido.
+            if (!parsed.merchantFound && !parsed.isTransfer) add("No pude leer el comercio")
             choice.reason?.let(::add)
         }
         if (reasons.isEmpty()) return null
@@ -200,6 +219,10 @@ class CaptureEngine(
 
     private fun describe(parsed: ParsedNotification, choice: AccountChoice): String {
         val amount = "$" + parsed.amount.toString().reversed().chunked(3).joinToString(".").reversed()
+        if (parsed.isTransfer) {
+            val preposition = if (parsed.direction == Direction.DEBIT) "desde" else "hacia"
+            return "traspaso de $amount $preposition ${choice.account.name}"
+        }
         val isDebit = parsed.direction == Direction.DEBIT
         val kind = if (isDebit) "gasto" else "ingreso"
         val preposition = if (isDebit) "en" else "de"
@@ -208,7 +231,10 @@ class CaptureEngine(
 
     private fun dedupeHash(packageName: String, parsed: ParsedNotification): String {
         val bucket = parsed.occurredAt / FIVE_MINUTES
-        val raw = "$packageName|${parsed.amount}|${TextNorm.key(parsed.merchant)}|$bucket"
+        // El sentido y la cuenta entran al hash: un traspaso del mismo monto en el mismo minuto
+        // sale de una cuenta y entra a otra, y son dos movimientos, no un duplicado.
+        val raw = "$packageName|${parsed.amount}|${parsed.direction}|${parsed.last4.orEmpty()}|" +
+            "${TextNorm.key(parsed.merchant)}|$bucket"
         val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }
     }

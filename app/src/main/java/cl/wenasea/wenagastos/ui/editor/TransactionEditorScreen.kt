@@ -22,6 +22,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -62,6 +63,7 @@ fun TransactionEditorScreen(
     var accountId by rememberSaveable { mutableLongStateOf(-1L) }
     var categoryId by rememberSaveable { mutableLongStateOf(-1L) }
     var direction by rememberSaveable { mutableStateOf(Direction.DEBIT) }
+    var isTransfer by rememberSaveable { mutableStateOf(false) }
     var occurredAt by rememberSaveable { mutableLongStateOf(0L) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var prefilled by rememberSaveable { mutableStateOf(false) }
@@ -74,6 +76,7 @@ fun TransactionEditorScreen(
             accountId = stored.accountId
             categoryId = stored.categoryId ?: -1L
             direction = stored.direction
+            isTransfer = stored.isTransfer
             occurredAt = stored.occurredAt
             prefilled = true
         }
@@ -89,8 +92,14 @@ fun TransactionEditorScreen(
         if (state.saved) onDone()
     }
 
-    val visibleCategories = state.categories.filter {
-        it.kind == if (direction == Direction.DEBIT) CategoryKind.EXPENSE else CategoryKind.INCOME
+    val visibleCategories = state.categories.filter { category ->
+        if (isTransfer) {
+            // Un traspaso no es gasto ni ingreso: solo se ofrecen las categorías de traspaso.
+            category.kind == CategoryKind.TRANSFER
+        } else {
+            category.kind ==
+                if (direction == Direction.DEBIT) CategoryKind.EXPENSE else CategoryKind.INCOME
+        }
     }
     val effectiveCategoryId = categoryId.takeIf { id ->
         id > 0 && visibleCategories.any { it.id == id }
@@ -142,6 +151,34 @@ fun TransactionEditorScreen(
                 selected = direction == Direction.CREDIT,
                 onClick = { direction = Direction.CREDIT },
                 label = { Text("Ingreso") },
+            )
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Traspaso entre mis cuentas",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = "Mueve plata de una cuenta a otra: no suma en gastos ni en ingresos.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = isTransfer,
+                onCheckedChange = { checked ->
+                    isTransfer = checked
+                    if (checked) {
+                        // Al marcarlo, la categoría de traspaso es la única que tiene sentido.
+                        state.categories.firstOrNull { it.kind == CategoryKind.TRANSFER }
+                            ?.let { categoryId = it.id }
+                    }
+                },
             )
         }
 
@@ -263,6 +300,7 @@ fun TransactionEditorScreen(
                     accountId = accountId.takeIf { it > 0 },
                     categoryId = effectiveCategoryId,
                     direction = direction,
+                    isTransfer = isTransfer,
                     occurredAtMillis = if (occurredAt > 0L) occurredAt else Dates.todayMillis(),
                 )
             },

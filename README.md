@@ -25,21 +25,22 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 | 1 | Room + cuentas + categorías + carga manual | ✅ |
 | 2 | Captura por notificaciones + diagnóstico | ✅ |
 | 3 | Reglas y aprendizaje | ⬜ |
-| 4 | Transferencias propias, reportes, presupuestos | ⬜ |
+| 4 | Transferencias propias, reportes, presupuestos | 🚧 traspasos entre cuentas propias listos |
 | 5 | Export, backup cifrado (SQLCipher), biometría | ⬜ |
 
 ## Qué hace hoy (Fases 1 y 2)
 
 - **Captura automática**: un `NotificationListenerService` local escucha solo los paquetes de Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet; el resto se ignora sin guardar nada.
 - **Un parser por banco**: obtiene monto en CLP, comercio o destinatario, últimos 4 dígitos, si la tarjeta es de crédito o débito, y si la plata entra o sale. Los avisos de saldo, claves, promociones y resúmenes vacíos se descartan con el motivo anotado.
-- **Cuenta automática**: los 4 dígitos que trae el aviso (los de la tarjeta en una compra, los de la cuenta en una transferencia) se cruzan por número exacto con `accounts.last4`, que se configura tocando la cuenta en Ajustes. Una cuenta puede tener **varios números** separados por coma (ej. `"5678,1234"`: su número de cuenta y el de su tarjeta de débito), así compras y transferencias caen en la misma cuenta.
+- **Cuenta automática**: los 4 dígitos que trae el aviso (los de la tarjeta en una compra, los **últimos 4 del número de cuenta** en una transferencia: `cuenta 000095441483` → `1483`) se cruzan por número exacto con `accounts.last4`, que se configura tocando la cuenta en Ajustes. Una cuenta puede tener **varios números** separados por coma (ej. `"5678,1234"`: su número de cuenta y el de su tarjeta de débito), así compras y transferencias caen en la misma cuenta.
 - **Confianza**: parseo completo + cuenta conocida → **Confirmado** (suma en los totales). Si falta el comercio, la tarjeta o la cuenta → **Por revisar**: no suma en los totales, se cuenta en la tarjeta *Por revisar* del inicio y el motivo queda escrito en las notas del movimiento (se ve al abrirlo y se borra al confirmarlo).
-- **Duplicados**: hash SHA-256 (paquete + monto + comercio + ventana de 5 min) y búsqueda por monto y sentido en ±5 min. Si Google Wallet avisa primero, el aviso del banco **completa** ese movimiento (cuenta, comercio, estado, hash) en vez de duplicarlo; si el banco llega primero, Wallet se descarta y no lo pisa.
+- **Traspasos entre cuentas propias**: "Transferencia hacia tu cuenta …" entra como ingreso y "… desde tu cuenta …" como gasto, aunque el aviso no traiga verbo. Se marcan con `isTransfer` y categoría **Entre cuentas**, así **no suman** en gastos, ingresos, balance ni en el gráfico por categoría: la plata no se gastó, solo cambió de cuenta. Solo cuentan como traspaso si el aviso nombra la cuenta propia y **no** trae destinatario; `Transferiste $50.000 a MARIA SOTO` o `Recibiste una transferencia de JUAN PEREZ` siguen siendo gasto e ingreso normales.
+- **Duplicados**: hash SHA-256 (paquete + monto + **sentido** + **número de cuenta** + comercio + ventana de 5 min) y búsqueda por monto y sentido en ±5 min. El sentido y la cuenta entran al hash porque un traspaso del mismo monto en el mismo minuto sale de una cuenta y entra a otra: son dos movimientos, no un duplicado. La captura corre serializada (un `Mutex` en el motor), así dos avisos simultáneos no pasan los dos la revisión antes de guardarse. Si Google Wallet avisa primero, el aviso del banco **completa** ese movimiento (cuenta, comercio, estado, hash) en vez de duplicarlo; si el banco llega primero, Wallet se descarta y no lo pisa.
 - **Diagnóstico** (Ajustes → "Ver últimos avisos"): texto crudo, resultado (registrado / por revisar / duplicado / completado / otra app / no es un movimiento) y detalle. La bitácora se recorta sola a las últimas 200 filas.
 - **Aviso en Inicio**: si el permiso de notificaciones está apagado aparece la tarjeta *La captura está apagada* con botón **Activar**; se va sola al volver de los Ajustes del sistema.
 - **Inicio**: gasto total del mes, ingresos, balance, pendientes por revisar, top 5 categorías con barra de proporción y últimos movimientos. Navegación por mes (‹ ›).
 - **Movimientos**: lista del mes agrupada por día (formato chileno `vie 20 nov`), con total gastado por día.
-- **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. Se puede eliminar al editar.
+- **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso. Se puede eliminar al editar.
 - **Ajustes**: permiso de captura, cuentas (con los números que aparecen en sus avisos), categorías y nota de privacidad.
 - Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
 - Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher se suma en la Fase 5, previo a los respaldos.

@@ -5,6 +5,9 @@ import cl.wenasea.wenagastos.data.local.entity.Direction
 /**
  * Decide si el movimiento saca o mete plata, según el verbo de la notificación.
  * Si aparecen verbos de ambos lados gana el que aparece primero en el texto.
+ *
+ * Los traspasos entre cuentas propias no traen verbo ("se realizó una Transferencia hacia tu
+ * cuenta ..."), pero la preposición dice todo: "hacia" entra y "desde" sale.
  */
 object DirectionDetector {
 
@@ -23,8 +26,15 @@ object DirectionDetector {
         RegexOption.IGNORE_CASE,
     )
 
+    /** La cuenta propia como destino: la plata entra a la casa. */
+    private val INTO_OWN_ACCOUNT = Regex("""\b(?:hacia|a)\s+tu\s+cuenta\b""")
+
+    /** La cuenta propia como origen: la plata sale (aunque sea hacia otra cuenta tuya). */
+    private val FROM_OWN_ACCOUNT = Regex("""\bdesde\s+tu\s+cuenta\b""")
+
     fun detect(text: String): Direction? {
         val normalized = TextNorm.plain(text)
+        ownAccountCue(normalized)?.let { return it }
         val credit = CREDIT.find(normalized)
         val debit = DEBIT.find(normalized)
         return when {
@@ -32,6 +42,19 @@ object DirectionDetector {
             credit == null -> Direction.DEBIT
             debit == null -> Direction.CREDIT
             credit.range.first <= debit.range.first -> Direction.CREDIT
+            else -> Direction.DEBIT
+        }
+    }
+
+    /** "hacia tu cuenta" entra, "desde tu cuenta" sale; si vienen las dos gana la primera. */
+    private fun ownAccountCue(normalized: String): Direction? {
+        val into = INTO_OWN_ACCOUNT.find(normalized)
+        val from = FROM_OWN_ACCOUNT.find(normalized)
+        return when {
+            into == null && from == null -> null
+            into == null -> Direction.DEBIT
+            from == null -> Direction.CREDIT
+            into.range.first <= from.range.first -> Direction.CREDIT
             else -> Direction.DEBIT
         }
     }

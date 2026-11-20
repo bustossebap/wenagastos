@@ -241,4 +241,62 @@ class NotifParserTest {
         assertNull(BankSource.of("com.whatsapp"))
         assertEquals(BankSource.SANTANDER, BankSource.of("cl.santander.smartphone"))
     }
+
+    @Test
+    fun `un traspaso hacia tu cuenta entra como ingreso y lee el numero de cuenta`() {
+        val n = parsed(
+            packageName = "cl.santander.smartphone",
+            title = "Santander",
+            text = "El 20-11-2026 08:05:41 se realizó una Transferencia hacia tu cuenta " +
+                "000095441483 por $ 40.000. Saludos",
+        )
+
+        assertEquals(40_000L, n.amount)
+        assertEquals(Direction.CREDIT, n.direction)
+        assertEquals("1483", n.last4)
+        assertEquals("Transferencia", n.merchant)
+        assertTrue(n.isTransfer)
+        assertTrue(n.isConfident)
+    }
+
+    @Test
+    fun `un traspaso desde tu cuenta sale como gasto`() {
+        val n = parsed(
+            packageName = "cl.santander.smartphone",
+            title = "Santander",
+            text = "El 20-11-2026 08:08:00 se realizó una Transferencia desde tu cuenta " +
+                "000095441483 por $ 22.000.",
+        )
+
+        assertEquals(22_000L, n.amount)
+        assertEquals(Direction.DEBIT, n.direction)
+        assertEquals("1483", n.last4)
+        assertTrue(n.isTransfer)
+        assertTrue(n.isConfident)
+    }
+
+    @Test
+    fun `una transferencia a otra persona no es traspaso entre cuentas propias`() {
+        val n = parsed(
+            packageName = "cl.santander.smartphone",
+            title = "Transferencia",
+            text = "Transferiste $50.000 a MARIA SOTO",
+        )
+
+        assertEquals(Direction.DEBIT, n.direction)
+        assertFalse(n.isTransfer)
+        assertEquals("MARIA SOTO", n.merchant)
+    }
+
+    @Test
+    fun `un monto no se confunde con un numero de cuenta`() {
+        val n = parsed(
+            packageName = "cl.santander.smartphone",
+            title = "Santander",
+            text = "Compraste $12.500 en JUMBO COSTA con tu cuenta por $ 1.250.000",
+        )
+
+        assertNull(n.last4)
+        assertEquals(Direction.DEBIT, n.direction)
+    }
 }
