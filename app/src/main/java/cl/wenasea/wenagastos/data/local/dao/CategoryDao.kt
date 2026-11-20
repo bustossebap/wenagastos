@@ -1,0 +1,30 @@
+package cl.wenasea.wenagastos.data.local.dao
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Update
+import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface CategoryDao {
+
+    @Query("SELECT * FROM categories WHERE isArchived = 0 ORDER BY kind ASC, sortOrder ASC, id ASC")
+    fun observeAll(): Flow<List<CategoryEntity>>
+
+    @Query("SELECT * FROM categories WHERE id = :id")
+    suspend fun getById(id: Long): CategoryEntity?
+
+    @Query("SELECT COUNT(*) FROM categories")
+    suspend fun count(): Int
+
+    @Insert
+    suspend fun insert(category: CategoryEntity): Long
+
+    @Insert
+    suspend fun insertAll(categories: List<CategoryEntity>)
+
+    @Update
+    suspend fun update(category: CategoryEntity)
+}
