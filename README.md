@@ -87,7 +87,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
-./gradlew :app:testDebugUnitTest      # 126 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, export/respaldo y cabecera/llave de la base
+./gradlew :app:testDebugUnitTest      # 128 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, export/respaldo y cabecera/llave de la base
 ./gradlew :app:connectedDebugAndroidTest  # 3 pruebas instrumentadas: migración real a SQLCipher (necesita emulador o teléfono conectado)
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
@@ -185,6 +185,7 @@ adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/ant
 - **El APK pesa ~10 MB más**: SQLCipher trae su SQLite compilado para `arm64-v8a`, `armeabi-v7a`, `x86` y `x86_64`. Se puede recortar con ABI splits el día que importe; hoy es un solo teléfono.
 - **Si se pierde la llave** (se borran los datos de la app, se cambia de teléfono sin respaldo, o el Keystore se resetea), la base cifrada no se puede abrir. La app lo detecta y ofrece *Empezar de cero* para después restaurar un `.wena`.
 - **Avisos que nunca se registran**: la captura solo ve la notificación en el instante en que el sistema la publica. Si el teléfono estaba **apagado**, el permiso de acceso a notificaciones estaba revocado o la app estaba detenida, ese movimiento no existe para la app y **no hay forma de recuperarlo** (no hay `INTERNET`, no se leen SMS y no hay `getActiveNotifications`, `WorkManager` ni `BOOT_COMPLETED` que lo busquen después). Si el teléfono solo estaba sin señal, la push del banco llega al reconectar y sí se registra; un **SMS** del banco, en cambio, no se lee. Lo perdido se anota a mano con el botón **+**.
+- **Un banco bloqueado se ve igual que un banco sin avisos**: si la app del banco está **deshabilitada** o **sin permiso de notificaciones** — lo típico en apps preinstaladas que nunca se abrieron — el sistema descarta el aviso *antes* de que el listener lo vea, y en **Diagnóstico** no queda ni rastro. Pasó en el A34 con Falabella: la app estaba deshabilitada (`pm list packages -d` la listaba) y con `POST_NOTIFICATION` en `ignore`. Se comprueba con `adb shell pm list packages -d` y `adb shell appops get <paquete> POST_NOTIFICATION`; se arregla abriendo la app una vez y aceptando sus notificaciones (`pm install-existing --user 0 <paquete>` y `pm grant <paquete> android.permission.POST_NOTIFICATIONS` también sirven por adb). La app Falabella tiene que estar **con sesión iniciada** para que el banco le mande la push.
 - **Gradle no ve los cambios de archivos** (el daemon cachea el sistema de archivos y responde `UP-TO-DATE` aunque el código cambió). Solución:
 
   ```bash
@@ -197,4 +198,5 @@ adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/ant
   Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
 - **Fase 5.1 — SQLCipher**: ✅ la base va cifrada en reposo, la llave vive en el Keystore y la migración de un archivo en texto plano ocurre sola al arrancar (sin cambiar la versión de esquema). Lo pendiente es la verificación en el A34 con datos reales.
 - **Fase 5.2 — captura por SMS** (idea para cuando aparezcan avisos perdidos): leer los SMS del banco con `READ_SMS`. Un SMS recibido con el teléfono apagado se entrega al encender, así que sería la única fuente capaz de recuperar un movimiento que ocurrió sin el teléfono prendido. Pide permiso nuevo y un parser por banco, porque el texto del SMS no se parece al de la notificación.
+- **Estado de los bancos en Diagnóstico**: por cada paquete cubierto, mostrar si está habilitado y si puede publicar notificaciones, con un botón para abrir sus ajustes. Es exactamente la comprobación que faltó cuando el retiro con Falabella no apareció: el canal estaba cerrado y nada dentro de la app lo delataba.
 - **Recordatorios de respaldo**: un aviso (sin permisos nuevos) cuando pasan 30 días desde el último respaldo, usando la fecha que se guarde en `SharedPreferences`.

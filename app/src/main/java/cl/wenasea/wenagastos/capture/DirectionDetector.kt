@@ -22,8 +22,8 @@ object DirectionDetector {
 
     private val DEBIT = Regex(
         """\b(compraste|compra|cargamos|cargo|pagaste|pago|consumo|consumiste|giro|retiro|""" +
-            """retiraste|transferiste|enviaste|debito|debitamos|suscripcion|cobro|cobramos|""" +
-            """you\s+paid|paid|you\s+spent|spent|purchase|charged|withdrawal|withdrew)\b""",
+            """retiraste|avance|transferiste|enviaste|debito|debitamos|suscripcion|cobro|cobramos|""" +
+            """you\s+paid|paid|you\s+spent|spent|purchase|charged|cash\s+advance|withdrawal|withdrew)\b""",
         RegexOption.IGNORE_CASE,
     )
 

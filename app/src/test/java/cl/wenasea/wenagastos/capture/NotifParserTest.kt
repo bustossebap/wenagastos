@@ -97,6 +97,35 @@ class NotifParserTest {
     }
 
     @Test
+    fun `retiro en cajero con la CMR queda como gasto`() {
+        val n = parsed(
+            packageName = "com.falabella.falabellaApp",
+            title = "Falabella",
+            text = "Realizaste un giro por $20.000 en CAJERO AUTOMATICO PROVIDENCIA con tu CMR. " +
+                "Cupo disponible: $480.000",
+        )
+
+        assertEquals(20_000L, n.amount)
+        assertEquals(Direction.DEBIT, n.direction)
+        assertEquals("CAJERO AUTOMATICO PROVIDENCIA", n.merchant)
+        assertTrue(n.cardIsCredit)
+        assertTrue(n.isConfident)
+    }
+
+    @Test
+    fun `avance en efectivo gana al recibiste que viene despues`() {
+        val n = parsed(
+            packageName = "com.falabella.falabellaApp",
+            title = "Falabella",
+            text = "Avance en efectivo por $50.000 en CAJERO AUTOMATICO. " +
+                "Recibiste el dinero en efectivo.",
+        )
+
+        assertEquals(50_000L, n.amount)
+        assertEquals(Direction.DEBIT, n.direction)
+    }
+
+    @Test
     fun `transferencia recibida usa el remitente como comercio`() {
         val n = parsed(
             packageName = "cl.santander.smartphone",
