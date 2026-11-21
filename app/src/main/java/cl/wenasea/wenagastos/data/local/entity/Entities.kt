@@ -7,7 +7,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "accounts",
-    indices = [Index(value = ["institution", "kind", "last4"], unique = false)],
+    indices = [Index(value = ["institution", "kind", "accountLast4"], unique = false)],
 )
 data class AccountEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -15,11 +15,17 @@ data class AccountEntity(
     val institution: Institution,
     val kind: AccountKind,
     /**
-     * Números de 4 dígitos que el banco muestra en los avisos de esta cuenta, separados por
-     * coma: el de la tarjeta en las compras y el de la cuenta en las transferencias.
-     * Ej. `"5678,1234"`. El cruce con los avisos se hace por número exacto, no por parecido.
+     * Número de la cuenta que el banco muestra en los avisos de una transferencia
+     * (`cuenta 000095441483` → `1483`). Uno solo: una cuenta tiene varias tarjetas, pero un
+     * único número de cuenta.
      */
-    val last4: String? = null,
+    val accountLast4: String? = null,
+    /**
+     * Números de tarjeta de esta cuenta, separados por coma: los de la tarjeta de débito en las
+     * compras (la plata es la misma que la de la cuenta) o el de la tarjeta cuando la cuenta es
+     * de crédito. Ej. `"4321"`. El cruce con los avisos es por número exacto, no por parecido.
+     */
+    val cardLast4: String? = null,
     val colorHex: String,
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),

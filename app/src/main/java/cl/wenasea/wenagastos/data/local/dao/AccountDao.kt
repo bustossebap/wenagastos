@@ -34,12 +34,14 @@ interface AccountDao {
     fun observeMovementCounts(): Flow<List<AccountMovementCount>>
 
     /**
-     * Busca una cuenta activa por número exacto. `last4` guarda una lista separada por comas,
-     * así que se compara con los delimitadores puestos: `1234` no matchea dentro de otro número.
+     * Busca una cuenta activa por número exacto, sea el de la cuenta o el de una de sus tarjetas.
+     * `cardLast4` guarda una lista separada por comas, así que se compara con los delimitadores
+     * puestos: `1234` no matchea dentro de otro número. La cuenta gana sobre la tarjeta porque el
+     * número de cuenta es único; entre varias tarjetas iguales gana la de menor id.
      */
     @Query(
         "SELECT * FROM accounts WHERE isActive = 1 " +
-            "AND ',' || last4 || ',' LIKE '%,' || :last4 || ',%' " +
+            "AND (accountLast4 = :last4 OR ',' || cardLast4 || ',' LIKE '%,' || :last4 || ',%') " +
             "ORDER BY id ASC LIMIT 1",
     )
     suspend fun findByLast4(last4: String): AccountEntity?

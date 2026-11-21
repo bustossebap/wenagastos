@@ -11,6 +11,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.parseNumbers
 
 /** Todo lo que viaja en un respaldo, ya en memoria. */
 data class BackupData(
@@ -36,7 +37,13 @@ data class BackupData(
 object Backup {
 
     const val DOCUMENT = "respaldo"
-    const val VERSION = 1
+
+    /**
+     * v2 partió `last4` en el número de la cuenta y los de sus tarjetas. Un v1 se sigue leyendo:
+     * el primer número de una corriente/ahorro pasa a ser el de la cuenta y el resto tarjetas, y
+     * en débito/crédito todo es tarjeta.
+     */
+    const val VERSION = 2
 
     fun encode(
         data: BackupData,
@@ -67,7 +74,8 @@ object Backup {
         "name" to account.name,
         "institution" to account.institution.name,
         "kind" to account.kind.name,
-        "last4" to account.last4,
+        "accountLast4" to account.accountLast4,
+        "cardLast4" to account.cardLast4,
         "colorHex" to account.colorHex,
         "isActive" to account.isActive,
         "createdAt" to account.createdAt,
@@ -121,8 +129,10 @@ object Backup {
     /** Lee un respaldo y valida que se pueda restaurar entero. Falla con un mensaje claro. */
     fun decode(text: String): BackupData {
         val root = root(text)
+        // Un respaldo v1 guarda todos los números en `last4`: hay que repartirlos al leerlo.
+        val legacyNumbers = (root.long("version") ?: 0) < 2
         val data = BackupData(
-            accounts = root.children("cuentas").map(::toAccount),
+            accounts = root.children("cuentas").map { toAccount(it, legacyNumbers) },
             categories = root.children("categorias").map(::toCategory),
             rules = root.children("reglas").map(::toRule),
             transactions = root.children("movimientos").map(::toTransaction),
@@ -184,18 +194,35 @@ object Backup {
         else -> throw BackupException("El campo '$key' del respaldo no es verdadero/falso")
     }
 
-    private fun toAccount(map: Map<String, Any?>): AccountEntity = AccountEntity(
-        id = map.requiredLong("id"),
-        name = map.requiredString("name"),
-        institution = Institution.entries.firstOrNull { it.name == map.string("institution") }
-            ?: Institution.OTHER,
-        kind = AccountKind.entries.firstOrNull { it.name == map.string("kind") }
-            ?: AccountKind.CHECKING,
-        last4 = map.string("last4"),
-        colorHex = map.string("colorHex") ?: Institution.OTHER.colorHex,
-        isActive = map.bool("isActive", true),
-        createdAt = map.long("createdAt") ?: 0L,
-    )
+    private fun toAccount(map: Map<String, Any?>, legacyNumbers: Boolean): AccountEntity {
+        val kind = AccountKind.entries.firstOrNull { it.name == map.string("kind") }
+            ?: AccountKind.CHECKING
+        val accountLast4: String?
+        val cardLast4: String?
+        if (legacyNumbers) {
+            val numbers = parseNumbers(map.string("last4"))
+            val cardOnly = kind == AccountKind.DEBIT || kind == AccountKind.CREDIT
+            accountLast4 = if (cardOnly) null else numbers.firstOrNull()
+            cardLast4 = (if (cardOnly) numbers else numbers.drop(1))
+                .joinToString(",")
+                .ifEmpty { null }
+        } else {
+            accountLast4 = map.string("accountLast4")
+            cardLast4 = map.string("cardLast4")
+        }
+        return AccountEntity(
+            id = map.requiredLong("id"),
+            name = map.requiredString("name"),
+            institution = Institution.entries.firstOrNull { it.name == map.string("institution") }
+                ?: Institution.OTHER,
+            kind = kind,
+            accountLast4 = accountLast4,
+            cardLast4 = cardLast4,
+            colorHex = map.string("colorHex") ?: Institution.OTHER.colorHex,
+            isActive = map.bool("isActive", true),
+            createdAt = map.long("createdAt") ?: 0L,
+        )
+    }
 
     private fun toCategory(map: Map<String, Any?>): CategoryEntity = CategoryEntity(
         id = map.requiredLong("id"),

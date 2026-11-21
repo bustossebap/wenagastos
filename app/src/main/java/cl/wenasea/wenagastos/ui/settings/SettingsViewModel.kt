@@ -7,13 +7,15 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.Institution
+import cl.wenasea.wenagastos.data.repo.AccountMergeRepository
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
-import cl.wenasea.wenagastos.domain.normalizeNumbers
+import cl.wenasea.wenagastos.data.repo.MergePlan
 import cl.wenasea.wenagastos.domain.numbers
 import cl.wenasea.wenagastos.domain.parseNumbers
+import cl.wenasea.wenagastos.domain.splitNumbers
 import cl.wenasea.wenagastos.importexport.Backup
 import cl.wenasea.wenagastos.importexport.BackupCrypto
 import cl.wenasea.wenagastos.importexport.BackupException
@@ -46,12 +48,15 @@ data class SettingsUiState(
     val noticeIsError: Boolean = false,
     /** Hay un archivo en camino: los botones de la tarjeta "Datos" se desactivan. */
     val busy: Boolean = false,
+    /** Fusión pendiente de confirmar: la pantalla muestra qué va a pasar antes de tocar nada. */
+    val mergePlan: MergePlan? = null,
 ) {
     fun movementCount(account: AccountEntity): Int = movementCounts[account.id] ?: 0
 }
 
 class SettingsViewModel(
     private val accounts: AccountRepository,
+    private val merger: AccountMergeRepository,
     categories: CategoryRepository,
     captureLogs: CaptureLogRepository,
     private val backup: BackupRepository,
@@ -81,25 +86,30 @@ class SettingsViewModel(
 
     /**
      * Crea la cuenta ([editing] `null`) o la actualiza. El color sale de la institución, así el
-     * alta no pide un color aparte. Los números se validan contra las otras cuentas activas: dos
-     * cuentas no pueden reclamar el mismo número, porque el cruce de los avisos es por número
-     * exacto y ganaría siempre la de menor id.
+     * alta no pide un color aparte.
+     *
+     * [accountNumber] es el número de la cuenta (el que aparece en las transferencias) y [cards]
+     * las tarjetas que gastan de ella; en una tarjeta de crédito o de débito el número es de la
+     * tarjeta, no de una cuenta que la respalde. Los números se validan contra las otras cuentas
+     * activas: dos cuentas no pueden reclamar el mismo número, porque el cruce de los avisos es
+     * por número exacto y ganaría siempre la de menor id.
      */
     fun saveAccount(
         editing: AccountEntity?,
         name: String,
         institution: Institution,
         kind: AccountKind,
-        numbers: List<String>,
+        accountNumber: String?,
+        cards: List<String>,
     ) {
         val cleanName = name.trim()
         if (cleanName.isEmpty()) {
             fail("Ponle un nombre a la cuenta")
             return
         }
-        val normalized = normalizeNumbers(numbers)
+        val (accountValue, cardValue) = splitNumbers(kind, accountNumber, cards)
+        val wanted = (listOfNotNull(accountValue) + parseNumbers(cardValue)).distinct()
         viewModelScope.launch {
-            val wanted = parseNumbers(normalized)
             val other = accounts.listActive().firstOrNull { account ->
                 account.id != editing?.id && account.numbers().any { it in wanted }
             }
@@ -118,7 +128,8 @@ class SettingsViewModel(
                 name = cleanName,
                 institution = institution,
                 kind = kind,
-                last4 = normalized,
+                accountLast4 = accountValue,
+                cardLast4 = cardValue,
                 colorHex = institution.colorHex,
             )
             if (editing == null) accounts.add(entity) else accounts.update(entity)
@@ -152,6 +163,37 @@ class SettingsViewModel(
 
     fun clearError() {
         local.update { it.copy(error = null) }
+    }
+
+    /**
+     * Prepara la fusión de dos cuentas: la pantalla muestra el resumen y pide confirmación antes
+     * de mover nada. Si no se pueden unir, el mensaje sale en el mismo diálogo.
+     */
+    fun previewMerge(keep: AccountEntity, merging: AccountEntity) {
+        viewModelScope.launch {
+            try {
+                val plan = withContext(Dispatchers.IO) { merger.plan(keep.id, merging.id) }
+                local.update { it.copy(mergePlan = plan, error = null) }
+            } catch (e: IllegalArgumentException) {
+                local.update { it.copy(error = e.message ?: "No se pueden unir esas cuentas") }
+            }
+        }
+    }
+
+    fun confirmMerge() {
+        val plan = local.value.mergePlan ?: return
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { merger.merge(plan) }
+                local.update { it.copy(error = null, mergePlan = null, saved = true) }
+            } catch (e: IllegalArgumentException) {
+                local.update { it.copy(mergePlan = null, error = e.message ?: "No se pudieron unir") }
+            }
+        }
+    }
+
+    fun cancelMerge() {
+        local.update { it.copy(mergePlan = null) }
     }
 
     /** Exporta los movimientos a CSV (planilla) o JSON (programas). */

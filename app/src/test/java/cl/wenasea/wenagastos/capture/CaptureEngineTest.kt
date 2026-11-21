@@ -87,7 +87,7 @@ class CaptureEngineTest {
                 name = "Santander Débito",
                 institution = Institution.SANTANDER,
                 kind = AccountKind.DEBIT,
-                last4 = "4321",
+                cardLast4 = "4321",
                 colorHex = "#EC0000",
             ),
             AccountEntity(
@@ -171,7 +171,7 @@ class CaptureEngineTest {
     @Test
     fun `una cuenta con dos numeros reconoce la tarjeta y el numero de cuenta`() {
         runBlocking {
-            accounts.update(accounts.getById(debitoId)!!.copy(last4 = "4321,5678"))
+            accounts.update(accounts.getById(debitoId)!!.copy(cardLast4 = "4321,5678"))
 
             // Compra con la tarjeta de débito: el primer número de la lista.
             assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = compraDebito)))
@@ -197,7 +197,7 @@ class CaptureEngineTest {
     @Test
     fun `un numero parecido no completa el movimiento`() {
         runBlocking {
-            accounts.update(accounts.getById(debitoId)!!.copy(last4 = "4321,5678"))
+            accounts.update(accounts.getById(debitoId)!!.copy(cardLast4 = "4321,5678"))
 
             val outcome = engine.handle(
                 notif(
@@ -407,7 +407,7 @@ class CaptureEngineTest {
     @Test
     fun `un traspaso hacia mi cuenta usa el numero de cuenta y no suma`() {
         runBlocking {
-            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            accounts.update(accounts.getById(ctaCteId)!!.copy(accountLast4 = "1483"))
 
             assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = traspasoEntra)))
 
@@ -431,7 +431,7 @@ class CaptureEngineTest {
     @Test
     fun `un traspaso desde mi cuenta sale como gasto pero no suma`() {
         runBlocking {
-            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            accounts.update(accounts.getById(ctaCteId)!!.copy(accountLast4 = "1483"))
 
             assertEquals(CaptureOutcome.SAVED, engine.handle(notif(text = traspasoSale)))
 
@@ -460,7 +460,7 @@ class CaptureEngineTest {
     @Test
     fun `las dos patas de un traspaso se registran por separado`() {
         runBlocking {
-            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            accounts.update(accounts.getById(ctaCteId)!!.copy(accountLast4 = "1483"))
 
             // Mismo monto y mismo minuto: si el hash no mirara el sentido, una pata se perdería.
             assertEquals(CaptureOutcome.PENDING, engine.handle(notif(text = traspasoDesdeOtra)))
@@ -478,8 +478,8 @@ class CaptureEngineTest {
     @Test
     fun `las dos patas de un traspaso entre cuentas quedan enlazadas`() {
         runBlocking {
-            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
-            accounts.update(accounts.getById(falabellaId)!!.copy(last4 = "7888"))
+            accounts.update(accounts.getById(ctaCteId)!!.copy(accountLast4 = "1483"))
+            accounts.update(accounts.getById(falabellaId)!!.copy(cardLast4 = "7888"))
 
             assertEquals(
                 CaptureOutcome.SAVED,
@@ -505,7 +505,7 @@ class CaptureEngineTest {
     @Test
     fun `un gasto normal del mismo monto no se enlaza como traspaso`() {
         runBlocking {
-            accounts.update(accounts.getById(ctaCteId)!!.copy(last4 = "1483"))
+            accounts.update(accounts.getById(ctaCteId)!!.copy(accountLast4 = "1483"))
             // Un ingreso del mismo monto y sentido contrario, pero no es un traspaso.
             txDao.seed(
                 TransactionEntity(

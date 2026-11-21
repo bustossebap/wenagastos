@@ -41,6 +41,7 @@ object VmFactories {
         initializer {
             SettingsViewModel(
                 container.accounts,
+                container.accountMerge,
                 container.categories,
                 container.captureLogs,
                 container.backup,

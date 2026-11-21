@@ -11,6 +11,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,7 +28,8 @@ class BackupTest {
         name = "Santander Cta. Cte.",
         institution = Institution.SANTANDER,
         kind = AccountKind.CHECKING,
-        last4 = "1234,5678",
+        accountLast4 = "1234",
+        cardLast4 = "5678",
         colorHex = "#EC0000",
         isActive = true,
         createdAt = 1_000L,
@@ -91,15 +93,34 @@ class BackupTest {
 
     @Test
     fun `un respaldo vuelve igual, con ids y traspasos`() {
-        assertEquals(data, Backup.decode(Backup.encode(data, schemaVersion = 4)))
+        assertEquals(data, Backup.decode(Backup.encode(data, schemaVersion = 5)))
+    }
+
+    @Test
+    fun `un respaldo v1 reparte sus numeros entre cuenta y tarjetas`() {
+        val text = """
+            {"app":"Wenagastos","documento":"respaldo","version":1,"cuentas":[
+              {"id":1,"name":"Cta","kind":"CHECKING","last4":"1483,4321"},
+              {"id":2,"name":"CMR","kind":"CREDIT","last4":"7788"}]}
+        """.trimIndent()
+
+        val accounts = Backup.decode(text).accounts
+
+        assertEquals("1483", accounts[0].accountLast4)
+        assertEquals("4321", accounts[0].cardLast4)
+        assertNull(accounts[1].accountLast4)
+        assertEquals("7788", accounts[1].cardLast4)
     }
 
     @Test
     fun `el archivo se reconoce como respaldo de la app`() {
-        val text = Backup.encode(data, schemaVersion = 4)
+        val text = Backup.encode(data, schemaVersion = 5)
 
         assertTrue(text.startsWith("""{"app":"Wenagastos","documento":"respaldo","""))
-        assertTrue(text.contains("\"schema\":4"))
+        assertTrue(text.contains("\"version\":2"))
+        assertTrue(text.contains("\"schema\":5"))
+        assertTrue(text.contains("\"accountLast4\":\"1234\""))
+        assertTrue(text.contains("\"cardLast4\":\"5678\""))
     }
 
     @Test
@@ -138,7 +159,7 @@ class BackupTest {
     fun `sin movimientos el respaldo sigue siendo valido`() {
         val empty = BackupData(accounts = listOf(account), categories = emptyList())
 
-        assertEquals(empty, Backup.decode(Backup.encode(empty, schemaVersion = 4)))
+        assertEquals(empty, Backup.decode(Backup.encode(empty, schemaVersion = 5)))
     }
 
     @Test

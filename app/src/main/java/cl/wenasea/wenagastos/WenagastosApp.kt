@@ -2,16 +2,19 @@ package cl.wenasea.wenagastos
 
 import android.app.Application
 import androidx.room.Room
+import androidx.room.withTransaction
 import cl.wenasea.wenagastos.capture.CaptureEngine
 import cl.wenasea.wenagastos.data.Seeder
 import cl.wenasea.wenagastos.data.local.DbEncryption
 import cl.wenasea.wenagastos.data.local.DbKey
 import cl.wenasea.wenagastos.data.local.WenagastosDatabase
+import cl.wenasea.wenagastos.data.repo.AccountMergeRepository
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
+import cl.wenasea.wenagastos.data.repo.TransactionRunner
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.importexport.DocumentFiles
 import cl.wenasea.wenagastos.ui.lock.AppLockState
@@ -73,6 +76,18 @@ class AppContainer(application: Application) {
     }
 
     val accounts by lazy { AccountRepository(database.accountDao()) }
+
+    /** Unir dos cuentas en una: la tarjeta de débito pasa a ser un número de la cuenta. */
+    val accountMerge by lazy {
+        AccountMergeRepository(
+            runner = object : TransactionRunner {
+                override suspend fun <T> run(block: suspend () -> T): T =
+                    database.withTransaction { block() }
+            },
+            accounts = database.accountDao(),
+            movements = database.transactionDao(),
+        )
+    }
     val categories by lazy { CategoryRepository(database.categoryDao()) }
     val transactions by lazy { TransactionRepository(database.transactionDao()) }
     val captureLogs by lazy { CaptureLogRepository(database.captureLogDao()) }

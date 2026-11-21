@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,9 +31,12 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.wenasea.wenagastos.data.local.entity.AccountEntity
+import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.capture.BankSource
 import cl.wenasea.wenagastos.capture.NotificationAccess
-import cl.wenasea.wenagastos.domain.numbers
+import cl.wenasea.wenagastos.domain.accountNumber
+import cl.wenasea.wenagastos.domain.cardNumbers
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
@@ -176,9 +180,10 @@ fun SettingsScreen(
                         onAction = { editTarget = AccountEditTarget(account = null) },
                     )
                     Text(
-                        text = "Toca una cuenta para cambiar su nombre, su tipo o los 4 dígitos " +
-                            "que aparecen en sus avisos: los de la tarjeta en una compra y los de " +
-                            "la cuenta en una transferencia. Puede tener más de uno.",
+                        text = "Cada cuenta tiene el número que aparece en las transferencias y " +
+                            "los de sus tarjetas de débito: la plata de la tarjeta es la de la " +
+                            "cuenta, así que no se anota aparte. Una tarjeta de crédito sí es " +
+                            "una cuenta propia, porque se debe aparte.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -224,11 +229,7 @@ fun SettingsScreen(
                                         append(" · ")
                                         append(account.kind.label)
                                         append(" · ")
-                                        append(
-                                            account.numbers()
-                                                .joinToString(" · ") { "•••• $it" }
-                                                .ifEmpty { "sin números" },
-                                        )
+                                        append(account.numbersLabel())
                                         append(" · ")
                                         append(if (movements == 1) "1 movimiento" else "$movements movimientos")
                                     },
@@ -306,22 +307,71 @@ fun SettingsScreen(
     }
 
     editTarget?.let { target ->
+        val editing = target.account
         AccountEditDialog(
-            account = target.account,
-            movementCount = target.account?.let(state::movementCount) ?: 0,
+            account = editing,
+            movementCount = editing?.let(state::movementCount) ?: 0,
+            mergeCandidates = editing?.let { account -> mergeCandidates(state.accounts, account) }
+                .orEmpty(),
             error = state.error,
             onDismiss = {
                 editTarget = null
                 viewModel.clearError()
             },
-            onSave = { name, institution, kind, numbers ->
-                viewModel.saveAccount(target.account, name, institution, kind, numbers)
+            onSave = { name, institution, kind, accountNumber, cards ->
+                viewModel.saveAccount(editing, name, institution, kind, accountNumber, cards)
+            },
+            onMerge = { candidate ->
+                editing?.let { viewModel.previewMerge(it, candidate) }
             },
             onSetActive = { active ->
-                target.account?.let { viewModel.setActive(it, active) }
+                editing?.let { viewModel.setActive(it, active) }
             },
-            onDelete = { target.account?.let(viewModel::removeAccount) },
+            onDelete = { editing?.let(viewModel::removeAccount) },
         )
+    }
+
+    // Unir dos cuentas mueve historia y borra traspasos internos: se confirma con el resumen.
+    state.mergePlan?.let { plan ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelMerge,
+            title = { Text("Unir cuentas") },
+            text = { Text(plan.describe()) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmMerge) { Text("Unir") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelMerge) { Text("Cancelar") }
+            },
+        )
+    }
+}
+
+/**
+ * Con quién se puede unir [account]: misma institución y misma familia de saldo. Una tarjeta de
+ * crédito se debe aparte, así que no se mezcla con una cuenta corriente ni con una de débito.
+ */
+private fun mergeCandidates(
+    accounts: List<AccountEntity>,
+    account: AccountEntity,
+): List<AccountEntity> = accounts.filter { candidate ->
+    candidate.id != account.id &&
+        candidate.isActive &&
+        candidate.institution == account.institution &&
+        (candidate.kind == AccountKind.CREDIT) == (account.kind == AccountKind.CREDIT)
+}
+
+/** «•••• 1483 + débito •••• 4321»: la cuenta primero y después las tarjetas que gastan de ella. */
+private fun AccountEntity.numbersLabel(): String {
+    val account = accountNumber()
+    val cards = cardNumbers()
+    return when {
+        kind == AccountKind.CREDIT ->
+            cards.joinToString(" · ") { "•••• $it" }.ifEmpty { "sin números" }
+        account == null && cards.isEmpty() -> "sin números"
+        account == null -> cards.joinToString(" · ") { "•••• $it" }
+        cards.isEmpty() -> "•••• $account"
+        else -> "•••• $account + débito " + cards.joinToString(" · ") { "•••• $it" }
     }
 }
 

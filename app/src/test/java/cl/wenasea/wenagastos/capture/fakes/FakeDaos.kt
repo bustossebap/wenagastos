@@ -113,6 +113,34 @@ class FakeTransactionDao : TransactionDao {
         publish()
     }
 
+    /** Espeja el filtro de los traspasos cuyas dos patas caen en las dos cuentas. */
+    override suspend fun countTransfersBetween(a: Long, b: Long): Int =
+        rows.values.count { internalTransfer(it, a, b) }
+
+    override suspend fun deleteTransfersBetween(a: Long, b: Long) {
+        rows.values.filter { internalTransfer(it, a, b) }.forEach { rows.remove(it.id) }
+        publish()
+    }
+
+    override suspend fun moveMovements(from: Long, to: Long, now: Long): Int {
+        val moved = rows.values.filter { it.accountId == from }
+        moved.forEach { rows[it.id] = it.copy(accountId = to, updatedAt = now) }
+        publish()
+        return moved.size
+    }
+
+    override suspend fun moveTransferLegs(from: Long, to: Long, now: Long): Int {
+        val moved = rows.values.filter { it.transferAccountId == from }
+        moved.forEach { rows[it.id] = it.copy(transferAccountId = to, updatedAt = now) }
+        publish()
+        return moved.size
+    }
+
+    private fun internalTransfer(tx: TransactionEntity, a: Long, b: Long): Boolean {
+        val target = tx.transferAccountId ?: return false
+        return (tx.accountId == a && target == b) || (tx.accountId == b && target == a)
+    }
+
     /** Espeja el filtro por monto, sentido y cuenta, con el mismo orden. */
     override suspend fun findCounterpart(
         amount: Long,

@@ -49,7 +49,7 @@ abstract class WenagastosDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "wenagastos.db"
-        const val VERSION = 4
+        const val VERSION = 5
 
         /** Fase 2: tabla de diagnóstico de la captura por notificaciones. */
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -76,6 +76,61 @@ abstract class WenagastosDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2)
+        /**
+         * Fase 6: `last4` se parte en el número de la cuenta y los de sus tarjetas, para que el
+         * editor diga qué es cada número en vez de una lista sin dueño. Se recrea la tabla porque
+         * `DROP COLUMN` no existe en el SQLite de `minSdk 26`; Room desactiva las claves foráneas
+         * durante la migración, así que `transactions.accountId` no se entera.
+         *
+         * Reparto de lo que hubiera: en una corriente o ahorro el primer número es el de la cuenta
+         * y el resto son tarjetas (el orden en que se agregaban); en débito y crédito, todo es
+         * número de tarjeta.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `accounts_new` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `institution` TEXT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `accountLast4` TEXT,
+                        `cardLast4` TEXT,
+                        `colorHex` TEXT NOT NULL,
+                        `isActive` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO accounts_new
+                        (id, name, institution, kind, accountLast4, cardLast4, colorHex, isActive, createdAt)
+                    SELECT id, name, institution, kind,
+                        CASE
+                            WHEN kind IN ('CHECKING', 'SAVINGS') AND instr(last4, ',') > 0
+                                THEN substr(last4, 1, instr(last4, ',') - 1)
+                            WHEN kind IN ('CHECKING', 'SAVINGS') THEN last4
+                        END,
+                        CASE
+                            WHEN kind IN ('DEBIT', 'CREDIT') THEN last4
+                            WHEN kind IN ('CHECKING', 'SAVINGS') AND instr(last4, ',') > 0
+                                THEN substr(last4, instr(last4, ',') + 1)
+                        END,
+                        colorHex, isActive, createdAt
+                    FROM accounts
+                    """.trimIndent(),
+                )
+                db.execSQL("DROP TABLE `accounts`")
+                db.execSQL("ALTER TABLE `accounts_new` RENAME TO `accounts`")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_accounts_institution_kind_accountLast4 " +
+                        "ON `accounts` (institution, kind, accountLast4)",
+                )
+            }
+        }
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_4_5)
     }
 }

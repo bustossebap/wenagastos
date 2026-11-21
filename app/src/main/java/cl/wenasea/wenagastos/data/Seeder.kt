@@ -19,41 +19,38 @@ object Seeder {
         if (categories.count() == 0) categories.addAll(defaultCategories())
     }
 
+    /**
+     * La tarjeta de débito no es una cuenta: es un número más de la cuenta corriente, porque la
+     * plata es la misma. Una tarjeta de crédito sí es una cuenta propia: tiene su cupo y su deuda.
+     */
     fun defaultAccounts(): List<AccountEntity> = listOf(
         AccountEntity(
             name = "Santander Cta. Cte.",
             institution = Institution.SANTANDER,
             kind = AccountKind.CHECKING,
-            colorHex = "#EC0000",
-        ),
-        AccountEntity(
-            name = "Santander Débito",
-            institution = Institution.SANTANDER,
-            kind = AccountKind.DEBIT,
+            accountLast4 = "1483",
+            cardLast4 = "4321",
             colorHex = "#EC0000",
         ),
         AccountEntity(
             name = "Santander MC Platinum Latam",
             institution = Institution.SANTANDER,
             kind = AccountKind.CREDIT,
+            cardLast4 = "5566",
             colorHex = "#EC0000",
         ),
         AccountEntity(
             name = "Falabella Cta. Cte.",
             institution = Institution.FALABELLA,
             kind = AccountKind.CHECKING,
+            accountLast4 = "8777",
             colorHex = "#7CB342",
         ),
         AccountEntity(
             name = "Falabella CMR",
             institution = Institution.FALABELLA,
             kind = AccountKind.CREDIT,
-            colorHex = "#7CB342",
-        ),
-        AccountEntity(
-            name = "Falabella Débito",
-            institution = Institution.FALABELLA,
-            kind = AccountKind.DEBIT,
+            cardLast4 = "7788",
             colorHex = "#7CB342",
         ),
         AccountEntity(

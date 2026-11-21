@@ -92,6 +92,38 @@ interface TransactionDao {
         to: Long,
     ): TransactionEntity?
 
+    /**
+     * Traspasos cuyas dos patas caen en estas dos cuentas: al unirlas dejan de tener sentido,
+     * porque ya no hay plata que vaya de una a la otra.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM transactions
+        WHERE transferAccountId IS NOT NULL
+          AND ((accountId = :a AND transferAccountId = :b)
+            OR (accountId = :b AND transferAccountId = :a))
+        """,
+    )
+    suspend fun countTransfersBetween(a: Long, b: Long): Int
+
+    @Query(
+        """
+        DELETE FROM transactions
+        WHERE transferAccountId IS NOT NULL
+          AND ((accountId = :a AND transferAccountId = :b)
+            OR (accountId = :b AND transferAccountId = :a))
+        """,
+    )
+    suspend fun deleteTransfersBetween(a: Long, b: Long)
+
+    /** Mueve el historial de una cuenta a otra. Lo usa la fusión de cuentas. */
+    @Query("UPDATE transactions SET accountId = :to, updatedAt = :now WHERE accountId = :from")
+    suspend fun moveMovements(from: Long, to: Long, now: Long): Int
+
+    /** Repunta las patas de traspaso que apuntaban a la cuenta que desaparece. */
+    @Query("UPDATE transactions SET transferAccountId = :to, updatedAt = :now WHERE transferAccountId = :from")
+    suspend fun moveTransferLegs(from: Long, to: Long, now: Long): Int
+
     @Insert
     suspend fun insert(transaction: TransactionEntity): Long
 
