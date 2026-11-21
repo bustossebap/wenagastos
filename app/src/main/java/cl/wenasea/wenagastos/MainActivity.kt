@@ -11,6 +11,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import cl.wenasea.wenagastos.ui.common.LocalContainer
+import cl.wenasea.wenagastos.ui.db.DbBrokenScreen
 import cl.wenasea.wenagastos.ui.lock.LockScreen
 import cl.wenasea.wenagastos.ui.nav.WenagastosNavHost
 import cl.wenasea.wenagastos.ui.theme.WenagastosTheme
@@ -44,7 +45,14 @@ class MainActivity : ComponentActivity() {
 
             CompositionLocalProvider(LocalContainer provides container) {
                 WenagastosTheme {
-                    if (lock.locked) {
+                    val problem = container.dbProblem
+                    if (problem != null) {
+                        // La base no abre: sin esto cualquier consulta reventaría la app.
+                        DbBrokenScreen(
+                            problem = problem,
+                            onDiscard = container::discardDatabase,
+                        )
+                    } else if (lock.locked) {
                         // Tapa la app entera: no hay pestañas ni datos detrás de la cortina.
                         LockScreen(onUnlock = lock::unlock)
                     } else {

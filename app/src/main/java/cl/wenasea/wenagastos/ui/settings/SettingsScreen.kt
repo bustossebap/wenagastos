@@ -281,6 +281,15 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 8.dp),
                     )
+                    Text(
+                        text = "Además, la base va cifrada (SQLCipher): el archivo no se puede " +
+                            "abrir fuera de este teléfono, porque la llave vive en el llavero " +
+                            "del sistema. Si borras los datos de la app, esa llave se pierde y " +
+                            "solo queda el respaldo .wena.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
                 }
             }
         }

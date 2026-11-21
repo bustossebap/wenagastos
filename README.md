@@ -27,8 +27,9 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 | 3 | Reglas y aprendizaje | ✅ |
 | 4 | Transferencias propias, reportes, presupuestos | ✅ |
 | 5 | Export CSV/JSON, respaldo cifrado con contraseña, bloqueo al abrir | ✅ |
+| 5.1 | Base cifrada en reposo con SQLCipher y llave en el Keystore | ✅ |
 
-## Qué hace hoy (Fases 1 a 5)
+## Qué hace hoy (Fases 1 a 5.1)
 
 - **Captura automática**: un `NotificationListenerService` local escucha solo los paquetes de Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet; el resto se ignora sin guardar nada.
 - **Un parser por banco**: obtiene monto en CLP, comercio o destinatario, últimos 4 dígitos, si la tarjeta es de crédito o débito, y si la plata entra o sale. Los avisos de saldo, claves, promociones y resúmenes vacíos se descartan con el motivo anotado.
@@ -49,7 +50,7 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 - **Nuevo/editar movimiento**: monto, comercio, cuenta, categoría (chips filtrados por gasto/ingreso) y fecha con calendario Material 3. El interruptor **Traspaso entre mis cuentas** marca el movimiento como traspaso y cambia los chips a las categorías de traspaso; en ese caso la cuenta se elige dos veces (**origen** y **destino**) y aparece la casilla de la otra pata. Se puede eliminar al editar.
 - **Ajustes**: permiso de captura, cuentas (crear, editar, archivar y los números que aparecen en sus avisos), **Datos** (exportar, respaldar y restaurar), **bloqueo al abrir**, categorías y nota de privacidad.
 - Datos iniciales: Santander Cta. Cte., Santander Débito, Santander MC Platinum Latam, Falabella Cta. Cte., Falabella CMR, Falabella Débito y MercadoPago + 18 categorías chilenas (Supermercado, Bencina, Delivery, Servicios básicos, Suscripciones, …).
-- Cifrado en reposo: por ahora lo entrega el File-Based Encryption de Android (almacenamiento privado de la app). SQLCipher queda para la Fase 5.1, ahora que el respaldo cifrado ya permite volver atrás si algo sale mal.
+- Cifrado en reposo: la base va cifrada con **SQLCipher** (AES-256) y la llave vive en el Keystore de Android. Ver *Fase 5.1* más abajo.
 
 ### Fase 5: los datos salen solo cuando el usuario quiere
 
@@ -61,10 +62,19 @@ Notificación push del banco (Santander, Falabella, MercadoPago)
 - **Bloqueo al abrir**: interruptor en Ajustes (solo si el teléfono tiene PIN o huella). Al abrir, una pantalla sin datos tapa la app entera; **Desbloquear** muestra el `BiometricPrompt` del sistema (huella, rostro o PIN en un solo diálogo, Android 11+) o la pantalla de bloqueo del sistema en Android 10 y anteriores. Si la app estuvo **más de un minuto** en segundo plano se vuelve a pedir (abrir el selector de archivos no cuenta como salir). Si el teléfono pierde su PIN, la app deja pasar y lo dice: el bloqueo no cifra la base, solo es una cortina para quien tome el teléfono desbloqueado.
 - **Sin dependencias nuevas**: JSON, CSV, PBKDF2 y AES-GCM con la biblioteca estándar (`kotlin`, `javax.crypto`), y el diálogo biométrico del sistema en vez de `androidx.biometric`. El formato del respaldo se prueba en la JVM.
 
+### Fase 5.1: la base cifrada
+
+- **SQLCipher** (`net.zetetic:sqlcipher-android`) cifra el archivo de Room con AES-256. Room no cambia: sigue en **versión 4**, el esquema es el mismo y las migraciones son las de siempre; solo cambia el *open helper*, que pasa a ser `SupportOpenHelperFactory` con la llave.
+- **Dónde está la llave**: 32 bytes al azar (`SecureRandom`) que **no** se guardan en claro: van envueltos con una clave AES-256-GCM del **Android Keystore** (alias `wenagastos_db_key`, sin pedir huella), y el sobre (IV + cifrado) queda en `SharedPreferences` (`wenagastos.secret`). Quien copie los archivos de la app se lleva el sobre, no la llave: esa no se puede exportar del Keystore. A SQLCipher se le pasa el secreto en hexadecimal (64 caracteres).
+- **Migración automática al arrancar**: en `AppContainer`, antes de que Room abra nada, se mira la cabecera del archivo. Si dice `SQLite format 3` todavía es texto plano y se cifra; si no, se sigue de largo. La receta: `PRAGMA wal_checkpoint(FULL)` para consolidar el WAL, `ATTACH DATABASE … KEY …` + `sqlcipher_export('encrypted')` a un archivo temporal (que tiene que **existir** antes del `ATTACH`: SQLCipher abre el adjunto sin `CREATE`), `PRAGMA encrypted.user_version = 4` (el `user_version` no se copia solo y Room lo necesita) y **verificación antes de reemplazar**: mismas filas en las cinco tablas, misma versión y cabecera ya cifrada. Recién entonces se renombra el original a `wenagastos.db.old`, se pone el nuevo en su lugar y, si el nuevo no abre, se restaura el viejo. `sqlcipher_export` copia también `room_master_table`, sin eso Room rechazaría la base.
+- **Si la base no se puede abrir** (Keystore perdido, archivo dañado) la app no se cae en un ciclo de errores: `MainActivity` muestra una pantalla que explica el problema y ofrece **Empezar de cero** (borra base y llave, reinicia) para después restaurar un `.wena`. La captura por notificaciones se detiene sola mientras la base no esté disponible.
+- **Costo**: el APK crece ~10 MB (SQLCipher trae su SQLite compilado para `arm64-v8a`, `armeabi-v7a`, `x86` y `x86_64`) y la primera apertura paga la derivación de llave de SQLCipher (unos 200–400 ms, en el hilo de fondo).
+
 ## Stack
 
 - Kotlin 2.2.21 · Jetpack Compose (BOM 2025.06.01) · Material 3
-- Room 2.7.2 (KSP) · Navigation Compose 2.9.8 · `java.time` (zona `America/Santiago`)
+- Room 2.8.5 (KSP) · `net.zetetic:sqlcipher-android` 4.17.0 · Navigation Compose 2.9.8 · `java.time` (zona `America/Santiago`)
+  - Las dos versiones van juntas a propósito: Room 2.8.5 arrastra `androidx.sqlite` 2.6.2, que es la que pide SQLCipher 4.17.0. Las 4.18+ exigen `androidx.sqlite` 2.7.0, que ningún Room estable usa todavía.
 - AGP 8.13.2 · Gradle 8.14.8 · `compileSdk 36` / `minSdk 26` / `targetSdk 36`
 - JDK 21 (Homebrew `openjdk@21`), Android SDK en `~/Library/Android/sdk`
 - Paquete: `cl.wenasea.wenagastos`
@@ -77,7 +87,8 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
-./gradlew :app:testDebugUnitTest      # 118 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes y export/respaldo
+./gradlew :app:testDebugUnitTest      # 126 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, export/respaldo y cabecera/llave de la base
+./gradlew :app:connectedDebugAndroidTest  # 3 pruebas instrumentadas: migración real a SQLCipher (necesita emulador o teléfono conectado)
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
 
@@ -126,31 +137,54 @@ En el emulador (o en el teléfono) se hace a mano, en **Ajustes → Datos**:
    adb shell grep -c Wenagastos /sdcard/Download/wenagastos-AAAA-MM-DD.wena            # 0
    ```
 
-3. **Restaurar** primero con una contraseña equivocada (tiene que aparecer *La contraseña no es la de este respaldo* y la base quedar intacta) y después con la correcta. La forma de comprobarlo sin la UI es comparar la base antes y después:
+3. **Restaurar** primero con una contraseña equivocada (tiene que aparecer *La contraseña no es la de este respaldo* y la base quedar intacta) y después con la correcta. Con la base cifrada ya no se puede mirar por dentro con `sqlite3`, así que el conteo se compara en la app (Movimientos del mes y Ajustes → Cuentas) o con el JSON exportado antes del respaldo.
 
-   ```bash
-   adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/antes.db
-   # ... restaurar ...
-   adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/despues.db
-   sqlite3 /tmp/despues.db 'pragma user_version; select count(*) from transactions; select id, accountId, amount from transactions order by id;'
-   ```
+### Probar el cifrado
+
+La primera vez que se abre la versión 5.1 con una base de texto plano, la migración corre sola. En el `logcat` queda una línea:
+
+```bash
+adb logcat -s WenagastosDb   # I WenagastosDb: Base cifrada: 29 filas, versión 4
+```
+
+Y el archivo deja de ser un SQLite normal:
+
+```bash
+# Cabecera: ya no dice "SQLite format 3", son 16 bytes de sal al azar.
+adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db | head -c 16 | xxd
+# En la carpeta no quedan .new ni .old (la migración los borra al terminar).
+adb shell run-as cl.wenasea.wenagastos ls databases/
+# Y con sqlite3 de escritorio no abre:
+adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/wena.db
+sqlite3 /tmp/wena.db 'select count(*) from transactions;'   # Error: file is not a database
+```
+
+Antes de migrar un teléfono con datos reales conviene guardar la base en claro y un `.wena`:
+
+```bash
+adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/antes-de-cifrar.db
+```
 
 ## Privacidad
 
 - Sin permiso `INTERNET`: la app no puede enviar datos a ningún lado.
 - `allowBackup="false"`: sin respaldos automáticos a la nube.
 - Los datos viven en el almacenamiento privado de la app.
+- La base va **cifrada con SQLCipher** y la llave (32 bytes al azar) está envuelta con una clave del **Android Keystore** que no se puede exportar: copiar `wenagastos.db` a otro lado no sirve de nada. La llave no se puede recuperar; si se pierde, solo queda restaurar un respaldo `.wena`.
 
 ## Convenciones
 
 - Paquetes: `cl.wenasea.wenagastos.<feature>` (`ui`, `data`, `domain`, `capture`, `importexport`).
 - Montos en `Long` en pesos chilenos, sin decimales (`TransactionEntity.amount`).
 - Fechas: `epoch millis` en zona `America/Santiago`; se formatean con `java.time`.
-- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4. La **versión 4 sigue siendo la última**: los presupuestos usan `categories.monthlyBudget`, que existe desde la versión 1, y la Fase 5 (export, respaldo y bloqueo) no toca el esquema. El respaldo anota en `schema` la versión con la que se escribió.
+- Esquemas Room exportados en `app/schemas/` (necesarios para las migraciones futuras). La versión 3 agrega `transactions.transferAccountId` + su índice con una `AutoMigration` 2 → 3; la versión 4 agrega `merchant_rules` (índice único `merchantKey + direction`, FK a `categories` con `SET_NULL`) con una `AutoMigration` 3 → 4. La **versión 4 sigue siendo la última**: los presupuestos usan `categories.monthlyBudget`, que existe desde la versión 1, y ni la Fase 5 (export, respaldo y bloqueo) ni la 5.1 (cifrado) tocan el esquema: SQLCipher cambia el archivo, no las tablas. El respaldo anota en `schema` la versión con la que se escribió.
 - La normalización de texto (`TextNorm`) vive en `domain`, porque la usan tanto `capture` como los repositorios.
 
 ## Problemas conocidos
 
+- **El APK pesa ~10 MB más**: SQLCipher trae su SQLite compilado para `arm64-v8a`, `armeabi-v7a`, `x86` y `x86_64`. Se puede recortar con ABI splits el día que importe; hoy es un solo teléfono.
+- **Si se pierde la llave** (se borran los datos de la app, se cambia de teléfono sin respaldo, o el Keystore se resetea), la base cifrada no se puede abrir. La app lo detecta y ofrece *Empezar de cero* para después restaurar un `.wena`.
+- **Avisos que nunca se registran**: la captura solo ve la notificación en el instante en que el sistema la publica. Si el teléfono estaba **apagado**, el permiso de acceso a notificaciones estaba revocado o la app estaba detenida, ese movimiento no existe para la app y **no hay forma de recuperarlo** (no hay `INTERNET`, no se leen SMS y no hay `getActiveNotifications`, `WorkManager` ni `BOOT_COMPLETED` que lo busquen después). Si el teléfono solo estaba sin señal, la push del banco llega al reconectar y sí se registra; un **SMS** del banco, en cambio, no se lee. Lo perdido se anota a mano con el botón **+**.
 - **Gradle no ve los cambios de archivos** (el daemon cachea el sistema de archivos y responde `UP-TO-DATE` aunque el código cambió). Solución:
 
   ```bash
@@ -161,5 +195,6 @@ En el emulador (o en el teléfono) se hace a mano, en **Ajustes → Datos**:
 
 - **Calibrar con avisos reales** (en curso): el motor ya está cerrado y probado con avisos sintéticos, pero falta ver los textos reales del A34. Para cada banco (Santander, Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet) se compara el texto crudo con lo que se parseó en **Diagnóstico** y se ajustan `BankSource.packages` y los patrones de `NotifParser` / `AmountExtractor` / `MerchantExtractor` / `CardDetector`.
   Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
-- **Fase 5.1 — SQLCipher**: cifrar la base en reposo. Va después del respaldo a propósito: migrar una base real con datos exige un respaldo cifrado que se pueda restaurar si algo sale mal. Requiere `net.zetetic:sqlcipher-android`, migrar la base existente con `sqlcipher_export()` y subir el peso del APK; la versión de esquema de Room no cambia.
+- **Fase 5.1 — SQLCipher**: ✅ la base va cifrada en reposo, la llave vive en el Keystore y la migración de un archivo en texto plano ocurre sola al arrancar (sin cambiar la versión de esquema). Lo pendiente es la verificación en el A34 con datos reales.
+- **Fase 5.2 — captura por SMS** (idea para cuando aparezcan avisos perdidos): leer los SMS del banco con `READ_SMS`. Un SMS recibido con el teléfono apagado se entrega al encender, así que sería la única fuente capaz de recuperar un movimiento que ocurrió sin el teléfono prendido. Pide permiso nuevo y un parser por banco, porque el texto del SMS no se parece al de la notificación.
 - **Recordatorios de respaldo**: un aviso (sin permisos nuevos) cuando pasan 30 días desde el último respaldo, usando la fecha que se guarde en `SharedPreferences`.

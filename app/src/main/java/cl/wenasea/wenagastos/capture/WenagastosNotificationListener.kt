@@ -50,6 +50,8 @@ class WenagastosNotificationListener : NotificationListenerService() {
         Log.i(TAG, "recibida pkg=$packageName title=${raw.title} text=${raw.text} big=${raw.bigText}")
 
         val container = (application as? WenagastosApp)?.container ?: return
+        // Sin base utilizable no se puede guardar nada; la pantalla principal ya avisa.
+        if (container.dbProblem != null) return
         scope.launch {
             try {
                 val outcome = container.capture.handle(raw)

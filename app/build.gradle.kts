@@ -15,8 +15,9 @@ android {
         applicationId = "cl.wenasea.wenagastos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.6.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -72,7 +73,14 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
 
+    // Base cifrada en reposo: SQLCipher trae el SQLite con AES-256 y su JNI por ABI.
+    implementation(libs.sqlcipher.android)
+
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation(libs.junit)
+
+    // Migración real de texto plano a cifrado: solo se puede probar con SQLCipher cargado.
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
