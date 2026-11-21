@@ -21,6 +21,8 @@ import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.Dates
+import java.time.LocalDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -621,6 +623,77 @@ class CaptureEngineTest {
     }
 
 
+
+    @Test
+    fun `un correo del banco con una sola cuenta en la institucion queda confirmado`() {
+        runBlocking {
+            assertEquals(CaptureOutcome.SAVED, engine.handle(correoFalabella()))
+
+            val row = txDao.stored.single()
+            assertEquals(TransactionStatus.CONFIRMED, row.status)
+            assertEquals(falabellaId, row.accountId)
+            assertEquals(2_000L, row.amount)
+            assertEquals(Direction.DEBIT, row.direction)
+            assertEquals("Nico Bustos", row.merchantRaw)
+            assertTrue(row.isExpense)
+            assertFalse(row.isTransfer)
+        }
+    }
+
+    @Test
+    fun `el correo y el push del mismo traspaso no se duplican`() {
+        runBlocking {
+            assertEquals(CaptureOutcome.SAVED, engine.handle(correoFalabella()))
+
+            // El mismo traspaso, esta vez por la app del banco (que no siempre avisa).
+            assertEquals(
+                CaptureOutcome.DUPLICATE,
+                engine.handle(
+                    notif(
+                        packageName = BANCO_FALABELLA,
+                        title = "Banco Falabella",
+                        text = "Transferiste \$2.000 a Nico Bustos desde tu cuenta " +
+                            "terminada en 8777",
+                        at = correoAt + 2 * 60_000,
+                    ),
+                ),
+            )
+            assertEquals(1, txDao.stored.size)
+        }
+    }
+
+    /** Hora del movimiento, sacada del propio correo (no la de llegada de la notificación). */
+    private val correoAt: Long = LocalDateTime.of(2026, 11, 21, 16, 27)
+        .atZone(Dates.zone)
+        .toInstant()
+        .toEpochMilli()
+
+    /** Correo real de Banco Falabella: la transferencia que nunca llega por push. */
+    private fun correoFalabella(): RawNotification = RawNotification(
+        packageName = MailSource.PACKAGE,
+        title = "Banco Falabella",
+        text = "Aviso de transferencia de fondos realizada",
+        bigText = """
+            Aviso de transferencia de fondos realizada
+            Detalle
+            Nombre destinatario
+            Nico Bustos
+            Rut
+            210409319
+            Monto transferencia
+            ${'$'}2.000
+            Cuenta de origen
+            Cuenta Corriente 19834048777
+            Fecha
+            21-11-2026
+            Hora
+            16:27
+            Número de operación
+            123922
+        """.trimIndent(),
+        postedAt = correoAt + 19 * 60_000,
+        key = "0|${MailSource.PACKAGE}|1|^sq_ig_i_personal|1",
+    )
 
     private companion object {
         const val SANTANDER = "cl.santander.smartphone"

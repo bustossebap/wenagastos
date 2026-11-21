@@ -40,4 +40,12 @@ object MailSource {
         if (plain.isEmpty()) return null
         return senders.firstOrNull { plain.contains(it.name) }?.source
     }
+
+    /**
+     * Banco de una notificación de Gmail. Mira todo lo que trae (el remitente va en el título)
+     * porque un contacto guardado puede cambiar el nombre visible y dejar el dominio en el cuerpo.
+     */
+    fun of(raw: RawNotification): BankSource? = of(
+        listOfNotNull(raw.title, raw.text, raw.bigText, raw.subText).joinToString(" "),
+    )
 }

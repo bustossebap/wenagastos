@@ -57,14 +57,19 @@ class CaptureEngine(
     suspend fun handle(raw: RawNotification): CaptureOutcome = gate.withLock { process(raw) }
 
     private suspend fun process(raw: RawNotification): CaptureOutcome {
-        val source = BankSource.of(raw.packageName) ?: return CaptureOutcome.IGNORED
+        // Un correo llega por Gmail y el banco va en el título; las apps se reconocen por el paquete.
+        // Si el remitente no es un banco, se descarta aquí y no se guarda nada.
+        val isMail = raw.packageName == MailSource.PACKAGE
+        val source = if (isMail) MailSource.of(raw) else BankSource.of(raw.packageName)
+        if (source == null) return CaptureOutcome.IGNORED
 
         // Los resúmenes de grupo llegan vacíos: no hay nada que analizar ni que dejar en el registro.
         val hasContent = listOf(raw.title, raw.text, raw.bigText, raw.textLines)
             .any { !it.isNullOrBlank() }
         if (!hasContent) return CaptureOutcome.IGNORED
 
-        val parsed = when (val result = NotifParser.parse(raw, source)) {
+        val result = if (isMail) MailParser.parse(raw, source) else NotifParser.parse(raw, source)
+        val parsed = when (result) {
             is ParseResult.Rejected -> {
                 log(raw, source, CaptureOutcome.REJECTED, result.reason)
                 return CaptureOutcome.REJECTED
@@ -203,10 +208,13 @@ class CaptureEngine(
         if (candidates.isNotEmpty()) {
             val preferredKind = if (parsed.cardIsCredit) AccountKind.CREDIT else null
             val chosen = candidates.firstOrNull { it.kind == preferredKind } ?: candidates.first()
+            // Con una sola cuenta en ese banco no hay dónde equivocarse, así que pedir que se
+            // asigne el número sería fricción sin ganancia. Con dos o más, el número desambigua.
+            val ambiguous = last4 != null && candidates.size > 1
             return AccountChoice(
                 account = chosen,
-                isPlaceholder = last4 != null,
-                reason = last4?.let { "Asigna el número *$it a una cuenta" },
+                isPlaceholder = ambiguous,
+                reason = if (ambiguous) "Asigna el número *$last4 a una cuenta" else null,
             )
         }
 
@@ -263,7 +271,10 @@ class CaptureEngine(
         val bucket = parsed.occurredAt / FIVE_MINUTES
         // El sentido y la cuenta entran al hash: un traspaso del mismo monto en el mismo minuto
         // sale de una cuenta y entra a otra, y son dos movimientos, no un duplicado.
-        val raw = "$packageName|${parsed.amount}|${parsed.direction}|${parsed.last4.orEmpty()}|" +
+        // La fuente es la institución, no la app: el mismo movimiento puede llegar por push
+        // (`cl.android`) y por correo (Gmail), y debe caer en el mismo hash.
+        val origin = parsed.source.name.ifBlank { packageName }
+        val raw = "$origin|${parsed.amount}|${parsed.direction}|${parsed.last4.orEmpty()}|" +
             "${TextNorm.key(parsed.merchant)}|$bucket"
         val digest = MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())
         return digest.joinToString("") { "%02x".format(it) }

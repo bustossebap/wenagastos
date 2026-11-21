@@ -24,6 +24,24 @@ class WenagastosNotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         Log.i(TAG, "Listener conectado")
+        // Lo que se publicó mientras el servicio estaba caído (un reinicio del teléfono, una
+        // actualización de la app o Android matando el proceso) no llega por onNotificationPosted
+        // y se perdería para siempre: se recupera de las notificaciones que siguen en la barra.
+        val cutoff = System.currentTimeMillis() - RECENT_WINDOW
+        val present = activeNotifications
+        val relevant = present.orEmpty()
+            .filter { it.packageName == MailSource.PACKAGE || BankSource.of(it.packageName) != null }
+            .joinToString { "${it.packageName}@${it.postTime}" }
+        Log.i(TAG, "activas=${present?.size ?: -1} relevantes=[$relevant]")
+        present
+            ?.filter { it.postTime >= cutoff }
+            ?.forEach { sbn ->
+                try {
+                    handle(sbn)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "No pude revisar una notificación ya presente", t)
+                }
+            }
     }
 
     override fun onListenerDisconnected() {
@@ -31,7 +49,9 @@ class WenagastosNotificationListener : NotificationListenerService() {
         Log.w(TAG, "Listener desconectado")
     }
 
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
+    override fun onNotificationPosted(sbn: StatusBarNotification) = handle(sbn)
+
+    private fun handle(sbn: StatusBarNotification) {
         val packageName = sbn.packageName ?: return
         val isMail = packageName == MailSource.PACKAGE
         if (!isMail && BankSource.of(packageName) == null) return
@@ -49,18 +69,15 @@ class WenagastosNotificationListener : NotificationListenerService() {
             key = sbn.key.orEmpty(),
         )
 
-        // Fase 0: solo se mide el formato real del correo, no se guarda nada todavía.
+        // Fase 1: el correo del banco ya se guarda como cualquier aviso; el filtro por remitente
+        // vive dentro del motor (`MailSource`), antes de tocar la base.
         if (isMail) {
-            val bank = MailSource.of(listOfNotNull(raw.title, raw.text, raw.subText).joinToString(" "))
-            Log.i(
-                TAG,
-                "correo banco=${bank?.label} title=${raw.title} text=${raw.text} " +
-                    "sub=${raw.subText} big=${raw.bigText} lines=${raw.textLines}",
-            )
-            return
+            val bank = MailSource.of(raw)
+            if (bank == null) return
+            Log.i(TAG, "correo banco=${bank.label} title=${raw.title} text=${raw.text}")
+        } else {
+            Log.i(TAG, "recibida pkg=$packageName title=${raw.title} text=${raw.text} big=${raw.bigText}")
         }
-
-        Log.i(TAG, "recibida pkg=$packageName title=${raw.title} text=${raw.text} big=${raw.bigText}")
 
         val container = (application as? WenagastosApp)?.container ?: return
         // Sin base utilizable no se puede guardar nada; la pantalla principal ya avisa.
@@ -82,5 +99,12 @@ class WenagastosNotificationListener : NotificationListenerService() {
 
     private companion object {
         const val TAG = "WenagastosCapture"
+
+        /**
+         * Ventana para recuperar lo que quedó en la barra mientras el servicio no estaba
+         * enlazado. Seis horas cubren un reinicio o una actualización largos, y a la vez evitan
+         * registrar movimientos viejos que el usuario ya pudo haber anotado a mano.
+         */
+        const val RECENT_WINDOW = 6 * 60 * 60_000L
     }
 }
