@@ -10,13 +10,15 @@ data class RawNotification(
     val text: String,
     val bigText: String? = null,
     val textLines: String? = null,
+    /** Gmail pone aquí la cuenta; sirve para no confundir el remitente con el asunto. */
+    val subText: String? = null,
     val postedAt: Long,
     val key: String,
 ) {
 
     /** Título + cuerpo, sin repetir lo mismo dos veces (muchas apps mandan igual el texto). */
     val fullText: String
-        get() = listOf(title, text, bigText, textLines)
+        get() = listOf(title, text, bigText, textLines, subText)
             .filterNotNull()
             .map { it.trim() }
             .filter { it.isNotEmpty() }

@@ -33,7 +33,8 @@ class WenagastosNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val packageName = sbn.packageName ?: return
-        if (BankSource.of(packageName) == null) return
+        val isMail = packageName == MailSource.PACKAGE
+        if (!isMail && BankSource.of(packageName) == null) return
 
         val extras = sbn.notification?.extras ?: return
         val raw = RawNotification(
@@ -43,9 +44,21 @@ class WenagastosNotificationListener : NotificationListenerService() {
             bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString(),
             textLines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)
                 ?.joinToString(" · "),
+            subText = extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString(),
             postedAt = sbn.postTime,
             key = sbn.key.orEmpty(),
         )
+
+        // Fase 0: solo se mide el formato real del correo, no se guarda nada todavía.
+        if (isMail) {
+            val bank = MailSource.of(listOfNotNull(raw.title, raw.text, raw.subText).joinToString(" "))
+            Log.i(
+                TAG,
+                "correo banco=${bank?.label} title=${raw.title} text=${raw.text} " +
+                    "sub=${raw.subText} big=${raw.bigText} lines=${raw.textLines}",
+            )
+            return
+        }
 
         Log.i(TAG, "recibida pkg=$packageName title=${raw.title} text=${raw.text} big=${raw.bigText}")
 
