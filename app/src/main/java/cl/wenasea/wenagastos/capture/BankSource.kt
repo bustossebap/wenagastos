@@ -22,9 +22,18 @@ enum class BankSource(
     ),
     FALABELLA(
         label = "Falabella",
-        // Ojo: es `falabella.com`, la app de la tienda (avisa compras con CMR). La app de
-        // Banco Falabella es otro paquete y no está cubierta: sus avisos de cuenta no se leen.
+        // Es `falabella.com`, la app de la tienda (avisa compras con CMR); el banco es otra
+        // app, BANCO_FALABELLA. El label se deja igual porque el parser compara el título del
+        // aviso con él para no tomarlo como comercio.
         packages = setOf("com.falabella.falabellaApp"),
+        institution = Institution.FALABELLA,
+        priority = 3,
+    ),
+    BANCO_FALABELLA(
+        label = "Banco Falabella",
+        // Su applicationId real es `cl.android` (framework Technisys): no dice "falabella",
+        // así que sus avisos se descartaban como si vinieran de una app cualquiera.
+        packages = setOf("cl.android"),
         institution = Institution.FALABELLA,
         priority = 3,
     ),

@@ -30,6 +30,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.wenasea.wenagastos.capture.BankSource
 import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.domain.numbers
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
@@ -37,6 +38,15 @@ import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
 import cl.wenasea.wenagastos.ui.common.VmFactories
 import cl.wenasea.wenagastos.ui.common.asColor
+
+/**
+ * Nombres de las apps que sabemos leer, para el texto de Ajustes. Sale de [BankSource] para
+ * que no se desactualice cada vez que se agrega un banco (ya pasó con Tenpo, Banco de Chile
+ * y Banco Falabella).
+ */
+private val capturedSources: String = BankSource.entries
+    .filter { it != BankSource.SHELL }
+    .joinToString(", ") { it.label }
 
 @Composable
 fun SettingsScreen(
@@ -98,8 +108,8 @@ fun SettingsScreen(
                     SectionHeader(title = "Captura automática")
                     Text(
                         text = if (accessEnabled) {
-                            "Activa. Wenagastos lee los avisos de Santander, Falabella, " +
-                                "MercadoPago y Google Wallet y los anota como movimientos."
+                            "Activa. Wenagastos lee los avisos de $capturedSources, y los " +
+                                "anota como movimientos."
                         } else {
                             "Desactivada. Para que los gastos se anoten solos hay que dar " +
                                 "acceso a las notificaciones."

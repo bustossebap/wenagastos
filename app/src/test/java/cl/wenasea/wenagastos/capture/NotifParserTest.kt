@@ -97,7 +97,7 @@ class NotifParserTest {
     }
 
     // Aviso sintético: fija cómo debe leerse un giro, no afirma que esa app lo mande.
-    // `com.falabella.falabellaApp` es la tienda; la app de Banco Falabella no está cubierta.
+    // `com.falabella.falabellaApp` es la tienda; el banco es `cl.android` (BANCO_FALABELLA).
     @Test
     fun `retiro en cajero con la CMR queda como gasto`() {
         val n = parsed(
@@ -271,6 +271,33 @@ class NotifParserTest {
     fun `los paquetes desconocidos no son una fuente conocida`() {
         assertNull(BankSource.of("com.whatsapp"))
         assertEquals(BankSource.SANTANDER, BankSource.of("cl.santander.smartphone"))
+    }
+
+    @Test
+    fun `el banco Falabella se reconoce por su paquete cl android`() {
+        // El banco publicó la app con un applicationId que no nombra al banco (framework
+        // Technisys): si se cae esta línea, volverá a descartar sus avisos en silencio.
+        assertEquals(BankSource.BANCO_FALABELLA, BankSource.of("cl.android"))
+        assertEquals("Banco Falabella", BankSource.BANCO_FALABELLA.label)
+    }
+
+    @Test
+    fun `la tienda Falabella y el banco Falabella son fuentes distintas`() {
+        assertEquals(BankSource.FALABELLA, BankSource.of("com.falabella.falabellaApp"))
+        assertEquals(BankSource.BANCO_FALABELLA, BankSource.of("cl.android"))
+    }
+
+    @Test
+    fun `aviso del banco Falabella sin comercio no toma el titulo como comercio`() {
+        val n = parsed(
+            packageName = "cl.android",
+            title = "Banco Falabella",
+            text = "Te pagaron $15.000. El dinero ya está disponible en tu cuenta.",
+        )
+
+        assertEquals(15_000L, n.amount)
+        assertFalse(n.merchantFound)
+        assertEquals("Movimiento Banco Falabella", n.merchant)
     }
 
     @Test

@@ -131,6 +131,7 @@ object NotifParser {
         "banco santander",
         "falabella",
         "cmr falabella",
+        "banco falabella",
         "mercado pago",
         "mercadopago",
         "tenpo",
