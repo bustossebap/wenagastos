@@ -261,8 +261,8 @@ class CaptureEngineTest {
 
             val outcome = engine.handle(
                 notif(
-                    packageName = FALABELLA,
-                    title = "Falabella",
+                    packageName = BANCO_FALABELLA,
+                    title = "Banco Falabella",
                     text = "Compraste \$23.450 en JUMBO COSTA",
                     at = baseTime + 60_000,
                 ),
@@ -624,7 +624,7 @@ class CaptureEngineTest {
 
     private companion object {
         const val SANTANDER = "cl.santander.smartphone"
-        const val FALABELLA = "com.falabella.falabellaApp"
+        const val BANCO_FALABELLA = "cl.android"
         const val WALLET = "com.google.android.apps.walletnfcrel"
 
         const val avisoWallet = "You paid CLP 12,500.00 at LIDER EXPRESS with Visa ••••8888"

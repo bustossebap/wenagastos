@@ -81,11 +81,13 @@ class NotifParserTest {
         assertEquals("PARIS", n.merchant)
     }
 
+    // Avisos sintéticos del banco: fijan cómo debe leerse el texto, no afirman que use
+    // exactamente estas palabras. `cl.android` es su applicationId real (BANCO_FALABELLA).
     @Test
     fun `compra en Falabella con cupo que no es el monto`() {
         val n = parsed(
-            packageName = "com.falabella.falabellaApp",
-            title = "Falabella",
+            packageName = "cl.android",
+            title = "Banco Falabella",
             text = "Realizaste una compra por $45.990 en FALABELLA RETAIL con tu CMR. " +
                 "Cupo disponible: $500.000",
         )
@@ -96,13 +98,11 @@ class NotifParserTest {
         assertTrue(n.cardIsCredit)
     }
 
-    // Aviso sintético: fija cómo debe leerse un giro, no afirma que esa app lo mande.
-    // `com.falabella.falabellaApp` es la tienda; el banco es `cl.android` (BANCO_FALABELLA).
     @Test
     fun `retiro en cajero con la CMR queda como gasto`() {
         val n = parsed(
-            packageName = "com.falabella.falabellaApp",
-            title = "Falabella",
+            packageName = "cl.android",
+            title = "Banco Falabella",
             text = "Realizaste un giro por $20.000 en CAJERO AUTOMATICO PROVIDENCIA con tu CMR. " +
                 "Cupo disponible: $480.000",
         )
@@ -117,8 +117,8 @@ class NotifParserTest {
     @Test
     fun `avance en efectivo gana al recibiste que viene despues`() {
         val n = parsed(
-            packageName = "com.falabella.falabellaApp",
-            title = "Falabella",
+            packageName = "cl.android",
+            title = "Banco Falabella",
             text = "Avance en efectivo por $50.000 en CAJERO AUTOMATICO. " +
                 "Recibiste el dinero en efectivo.",
         )
@@ -282,8 +282,10 @@ class NotifParserTest {
     }
 
     @Test
-    fun `la tienda Falabella y el banco Falabella son fuentes distintas`() {
-        assertEquals(BankSource.FALABELLA, BankSource.of("com.falabella.falabellaApp"))
+    fun `la app de la tienda Falabella no se lee`() {
+        // La tienda (`falabella.com`) avisa compras con CMR, no movimientos de cuenta: se dejó
+        // fuera a propósito. El banco sí se lee, aunque su paquete no nombre al banco.
+        assertNull(BankSource.of("com.falabella.falabellaApp"))
         assertEquals(BankSource.BANCO_FALABELLA, BankSource.of("cl.android"))
     }
 
