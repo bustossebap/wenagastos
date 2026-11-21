@@ -22,6 +22,8 @@ enum class BankSource(
     ),
     FALABELLA(
         label = "Falabella",
+        // Ojo: es `falabella.com`, la app de la tienda (avisa compras con CMR). La app de
+        // Banco Falabella es otro paquete y no está cubierta: sus avisos de cuenta no se leen.
         packages = setOf("com.falabella.falabellaApp"),
         institution = Institution.FALABELLA,
         priority = 3,

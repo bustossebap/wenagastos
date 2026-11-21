@@ -96,6 +96,8 @@ class NotifParserTest {
         assertTrue(n.cardIsCredit)
     }
 
+    // Aviso sintético: fija cómo debe leerse un giro, no afirma que esa app lo mande.
+    // `com.falabella.falabellaApp` es la tienda; la app de Banco Falabella no está cubierta.
     @Test
     fun `retiro en cajero con la CMR queda como gasto`() {
         val n = parsed(
