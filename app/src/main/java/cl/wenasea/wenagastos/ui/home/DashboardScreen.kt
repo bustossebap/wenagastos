@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,6 +32,7 @@ import cl.wenasea.wenagastos.ui.common.BackupDueCard
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
+import cl.wenasea.wenagastos.ui.common.HeroBlock
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.MonthSwitcher
 import cl.wenasea.wenagastos.ui.common.SectionHeader
@@ -94,7 +94,17 @@ fun DashboardScreen(
             )
         }
 
-        item { MonthSummaryCard(state) }
+        item {
+            HeroBlock(
+                label = "Gastos del mes",
+                amount = Money.format(state.expenses),
+                stats = listOf(
+                    "Ingresos" to Money.format(state.income),
+                    "Balance" to Money.format(state.balance),
+                    "Por revisar" to state.pendingCount.toString(),
+                ),
+            )
+        }
 
         item { BalancesSummaryCard(onOpen = onOpenBalances) }
 
@@ -180,65 +190,6 @@ fun DashboardScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun MonthSummaryCard(state: LedgerUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                text = "Gastos del mes",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = Money.format(state.expenses),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                MiniStat(
-                    label = "Ingresos",
-                    value = Money.format(state.income),
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    label = "Balance",
-                    value = Money.format(state.balance),
-                    modifier = Modifier.weight(1f),
-                )
-                MiniStat(
-                    label = "Por revisar",
-                    value = state.pendingCount.toString(),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
     }
 }
 

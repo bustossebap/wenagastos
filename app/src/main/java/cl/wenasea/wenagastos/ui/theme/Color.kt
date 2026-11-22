@@ -40,6 +40,11 @@ val TrigoTinta = Color(0xFF7F5C1C)     // 5.31:1 crema, 4.80:1 tarjeta
 // tarjeta más clara (#2E3150, 4.26:1). Esta variante, apenas más luminosa, pasa en las tres.
 val TerracotaNoche = Color(0xFFE58A70) // 4.91:1 sobre #2E3150, 5.54:1 sobre #262943
 
+// El marino del héroe en modo oscuro: un peldaño por encima de NocheCapa4, porque si no el bloque
+// se confunde con las tarjetas (Marino #383A5B y Capa4 #363A5E tienen la misma luminancia).
+// Crema encima = 6.93:1; trigo encima = 5.16:1.
+val MarinoAlto = Color(0xFF4A4E78)
+
 // --- Noche: el modo oscuro que el manual no trae, deducido de la familia del marino ---
 val NocheHueco = Color(0xFF14161F)
 val NocheCapa1 = Color(0xFF191B29)

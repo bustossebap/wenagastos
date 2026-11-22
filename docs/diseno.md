@@ -63,6 +63,10 @@ quedar sólo como fondo.
 > La terracota pura se queda en 4,26:1 sobre la tarjeta más clara (`#2E3150`). Para texto de
 > cargo en oscuro se usa `#E58A70` (4,91:1), que `Color.kt` guarda como `TerracotaNoche`.
 
+> El héroe de Inicio necesita un marino que se despegue de las tarjetas, y `#383A5B` tiene la
+> misma luminancia que `#363A5E`. En oscuro el bloque usa **`MarinoAlto #4A4E78`** (crema encima
+> 6,93:1, trigo 5,16:1); en claro usa el Marino del manual sin cambios (crema 9,52:1).
+
 **Los papeles de Material se conservan entre modos** para que nada cambie de significado al
 cambiar de tema:
 
@@ -103,9 +107,9 @@ cambiar de tema:
   no se puede empaquetar.
 - **Cifras tabulares (`tnum`) en toda la escala.** Instrument Sans trae la característica; así los
   montos quedan alineados en columna sin trucos de ancho fijo.
-- **VG5000** se reserva para el número grande del héroe (etapa 3). Todavía no se asigna a ningún
-  rol porque las pantallas actuales fuerzan `FontWeight.Bold` y la familia tiene un solo peso: se
-  engordaría sintéticamente y el trazo se mancha.
+- **VG5000** se usa sólo en la cifra del héroe de Inicio (`HeroAmount`, 40/44 sp), sin tocar
+  `fontWeight`: la familia tiene un solo peso y engordarla sintéticamente mancha el trazo. El
+  énfasis lo hacen el tamaño y el trigo sobre marino. Nunca va en texto corrido.
 - Licencias completas en `app/src/main/assets/licenses/` (viajan dentro del APK, como pide la OFL).
 
 ### Escala (sp)
@@ -150,7 +154,8 @@ Los tres gestos que hacen reconocible la app sin el logo del manual:
    (alturas distintas, separación fina, borde levemente irregular) y el tab activo de la barra de
    navegación se marca con una tecla pisada, no con el pill de Material.
 2. **Borde rasgado.** Una sola vez, en el borde superior del bloque del héroe de Inicio, como las
-   bandas de la portada. `Path` con 5 o 6 curvas y amplitud baja.
+   bandas de la portada. `Path` con una decena de curvas cortas, 7 dp de amplitud y un perfil fijo
+   —no aleatorio— para que no cambie de forma entre recomposiciones (`HeroBlock.kt`).
 3. **Bloques de color con el texto que manda el manual.** Un badge sobre marino lleva crema; sobre
    trigo, tinta. Nunca al revés.
 
@@ -167,9 +172,10 @@ papeles, área de resguardo).
 | `ui/theme/Color.kt` | paleta madre, derivadas de papel, acentos entintados, capas de noche |
 | `ui/theme/Theme.kt` | `ColorScheme` claro y oscuro + instalación de la paleta de marca |
 | `ui/theme/WenaPalette.kt` | `WenaPalette` y `Wena.paleta`: acentos y colores de dinero por modo |
-| `ui/theme/Type.kt` | familias, escala tipográfica, `Vg5000` |
+| `ui/theme/Type.kt` | familias, escala tipográfica, `Vg5000` y `HeroAmount` |
 | `ui/theme/Shape.kt` | escala de radios |
 | `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca |
+| `ui/common/HeroBlock.kt` | bloque del héroe y `TornTopEdge` (borde rasgado) |
 | `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow` |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
 | `res/values-night/colors.xml` | arranque en noche |
@@ -177,7 +183,8 @@ papeles, área de resguardo).
 | `assets/licenses/` | OFL de las dos fuentes |
 
 `Wena.paleta` es la puerta para lo que el `ColorScheme` de Material 3 no puede expresar: los seis
-acentos del manual y los dos colores de dinero resueltos por modo (`abono`, `cargo`).
+acentos del manual, los dos colores de dinero resueltos por modo (`abono`, `cargo`) y los tres del
+héroe (`heroFondo`, `heroTexto`, `heroCifra`).
 
 ---
 
@@ -188,7 +195,7 @@ acentos del manual y los dos colores de dinero resueltos por modo (`abono`, `car
 | 0 | Fichas, paleta, contrastes | ✅ este documento |
 | 1 | Tokens: color, tipografía, formas, fuentes, arranque | ✅ |
 | 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | 🔶 barra y FAB hechos; componentes comunes, pendientes |
-| 3 | Inicio: héroe con borde rasgado y monto en VG5000 | pendiente |
+| 3 | Inicio: héroe con borde rasgado y monto en VG5000 | ✅ |
 | 4 | Reportes: barras-tecla y paleta de acento | pendiente |
 | 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | pendiente |
 | 6 | Auditoría de contraste en dispositivo + capturas antes/después | pendiente |

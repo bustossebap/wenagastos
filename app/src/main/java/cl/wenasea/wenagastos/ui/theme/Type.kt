@@ -18,10 +18,8 @@ import cl.wenasea.wenagastos.R
  * (app/src/main/assets/licenses/instrument-sans-OFL.txt).
  *
  * VG5000: SIL OFL 1.1, Velvetyne / Justin Bihan; es la tipografía del logotipo del manual y se
- * reserva para la cifra protagonista, nunca para texto corrido. Todavía no se asigna a ningún
- * rol de la escala: las pantallas que la usarán hoy fuerzan FontWeight.Bold, y una familia de un
- * solo peso se engorda sintéticamente (se "mancha" el trazo). Se conecta en la etapa 3, cuando
- * esos bloques se reescriban.
+ * reserva para la cifra protagonista, nunca para texto corrido. Vive en [HeroAmount]: ahí no se
+ * fuerza ningún peso, porque la familia tiene uno solo y engordarla sintéticamente mancha el trazo.
  */
 
 private const val CIFRAS_TABULARES = "tnum"
@@ -34,6 +32,18 @@ private val InstrumentSans = FontFamily(
 
 /** Familia de un solo peso, para los montos del héroe (etapa 3). */
 val Vg5000 = FontFamily(Font(R.font.vg5000_regular, FontWeight.Normal))
+
+/**
+ * Cifra protagonista: VG5000 en su único peso, sin tocar `fontWeight` — engordarla sintéticamente
+ * mancha el trazo. El tamaño y el trigo sobre marino hacen el énfasis. Cabe hasta "$12.345.678"
+ * en un teléfono de 360 dp sin encoger.
+ */
+val HeroAmount = TextStyle(
+    fontFamily = Vg5000,
+    fontSize = 40.sp,
+    lineHeight = 44.sp,
+    letterSpacing = 0.5.sp,
+)
 
 /*
  * Las cifras tabulares van en todos los roles: en una lista de gastos los montos quedan

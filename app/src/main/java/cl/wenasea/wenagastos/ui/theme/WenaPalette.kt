@@ -30,6 +30,12 @@ data class WenaPalette(
     val abono: Color,
     val cargo: Color,
     val esOscuro: Boolean,
+    // El héroe de Inicio: bloque marino con la cifra en trigo. En claro es el Marino del manual
+    // (crema encima 9,52); en oscuro sube un peldaño a MarinoAlto (crema 6,93, trigo 5,16) para
+    // que no se confunda con las tarjetas.
+    val heroFondo: Color,
+    val heroTexto: Color,
+    val heroCifra: Color,
 )
 
 /**
@@ -52,6 +58,9 @@ internal val WenaPaletteClara = WenaPalette(
     abono = SalviaTinta,
     cargo = TerracotaTinta,
     esOscuro = false,
+    heroFondo = Marino,
+    heroTexto = Crema,
+    heroCifra = Trigo,
 )
 
 /**
@@ -75,6 +84,9 @@ internal val WenaPaletteOscura = WenaPalette(
     abono = Salvia,
     cargo = TerracotaNoche,
     esOscuro = true,
+    heroFondo = MarinoAlto,
+    heroTexto = Crema,
+    heroCifra = Trigo,
 )
 
 internal val LocalWenaPalette = staticCompositionLocalOf { WenaPaletteClara }
