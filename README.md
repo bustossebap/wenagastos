@@ -105,6 +105,7 @@ Notificación push del banco o correo en Gmail (Santander, Banco Falabella, Merc
 - **Ventana de la consulta**: la pantalla pide los movimientos desde el día 1 del mes anterior —un ciclo nunca empieza antes— en vez de reconstruir la consulta cada vez que se edita el día de corte.
 - **La deuda se escribe en positivo**: en una tarjeta el diálogo de saldo pide *Deuda de hoy*, no *Saldo*: `Credit.balanceFromDebt` la guarda como saldo negativo (deuda $200.000 → `-200000`) y así se resta del cupo. Antes pedía escribir `-200000` a mano en un campo que decía "deuda", y quien escribía el monto tal cual quedaba con el cupo completo: se arregló en la misma pasada. Un `-200.000` escrito por costumbre se acepta igual y no se resta dos veces; en una cuenta que no es tarjeta el campo sigue siendo el saldo del banco, con signo.
 - **Migración 6 → 7** (`AutoMigration`) y **respaldo v4** con los tres campos; un `.wena` v3 se lee igual y la tarjeta queda sin configurar. Al **unir dos tarjetas**, el cupo y el ciclo pasan a la que se queda si esta no los tenía.
+- **La migración se prueba, no se reza**: `Migration6To7Test` (instrumentada) crea la base con Room, le quita las tres columnas y la deja en `user_version = 6` con el hash de `6.json`; al reabrir, Room corre la `AutoMigration` de verdad y la prueba comprueba que la cuenta y su corte siguen ahí, que las tres columnas quedan en `NULL` y que se pueden escribir. No usa `room-testing` ni copia el DDL: `DROP COLUMN` (SQLite 3.35, API 31+) hace el trabajo.
 - **Verificado en el A34** (21-11-2026): la base v6 migró sola a v7 al instalar y la app abrió con sus datos (6 cuentas, gastos del mes $10.314). Se creó una tarjeta de prueba (*Prueba cupo*, cupo $1.500.000, corte 25, pago 5): el detalle de saldos mostró *Cupo $1.500.000 · falta el saldo para saber cuánto queda* y el ciclo en curso con su vencimiento. Se le escribió una deuda de $200.000 en el diálogo y quedó **Cupo $1.500.000 · disponible $1.300.000** (antes del arreglo, el mismo $200.000 dejaba el cupo entero, que es el bug que se corrigió). Al pasarla a *Cuenta corriente* el cupo y el ciclo desaparecieron del detalle —los tres campos vuelven a `null`— y la tarjeta de prueba se borró después. **Sin verificar en el teléfono**: la restauración de un `.wena` v3 en la app (el parseo v3 sí está cubierto por los tests).
 
 ## Stack
@@ -125,7 +126,7 @@ export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
 ./gradlew :app:testDebugUnitTest      # 215 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, saldos, cupo, ciclo y deuda de la tarjeta, export/respaldo, cabecera/llave de la base, estado de las apps de banco y recordatorio de respaldo
-./gradlew :app:connectedDebugAndroidTest  # 3 pruebas instrumentadas: migración real a SQLCipher (necesita emulador o teléfono conectado)
+./gradlew :app:connectedDebugAndroidTest  # 4 pruebas instrumentadas: migración real a SQLCipher y la 6 -> 7 sobre una base v6 (necesita emulador o teléfono con API 31 o más)
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
 
