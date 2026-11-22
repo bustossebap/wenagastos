@@ -30,6 +30,7 @@ Notificación push del banco o correo en Gmail (Santander, Banco Falabella, Merc
 | 5.1 | Base cifrada en reposo con SQLCipher y llave en el Keystore | ✅ |
 | 6 | Una cuenta por banco: la tarjeta de débito es un número de la cuenta (base v5) | ✅ |
 | 6.2 | Transferencia recibida sin nombre: el correo de MACH completa el push del banco receptor | ✅ |
+| 6.3 | La contraseña del respaldo deja de ser un PIN: mínimo 12 caracteres y no todos números | ✅ |
 
 ## Qué hace hoy (Fases 1 a 5.1)
 
@@ -207,7 +208,7 @@ adb exec-out run-as cl.wenasea.wenagastos cat databases/wenagastos.db > /tmp/ant
 
 - **Calibrar con avisos reales** (en curso): el motor ya está cerrado y probado con avisos sintéticos, pero falta ver los textos reales del A34. Para cada banco (Santander, Banco Falabella, MercadoPago, Tenpo, Banco de Chile y Google Wallet) se compara el texto crudo con lo que se parseó en **Diagnóstico** y se ajustan `BankSource.packages` y los patrones de `NotifParser` / `AmountExtractor` / `MerchantExtractor` / `CardDetector`.
   Riesgo conocido: las compras en cuotas CMR pueden entregar el monto de la cuota en vez del total.
-- **Fase 5.1 — SQLCipher**: ✅ la base va cifrada en reposo, la llave vive en el Keystore y la migración de un archivo en texto plano ocurre sola al arrancar (sin cambiar la versión de esquema). Lo pendiente es la verificación en el A34 con datos reales.
+- **Fase 5.1 — SQLCipher**: ✅ la base va cifrada en reposo, la llave vive en el Keystore y la migración de un archivo en texto plano ocurre sola al arrancar (sin cambiar la versión de esquema). **Verificado en el A34** (21-11-2026): `databases/wenagastos.db` y su `-wal` empiezan con bytes aleatorios (`ff4ff8b8…`, `377f0682…`) en vez de `SQLite format 3`, no queda ningún `.db` en claro ni `-journal` suelto en `databases/`, y la app abre los movimientos con normalidad —si la llave del Keystore no sirviera, la consulta fallaría en vez de mostrar 6 cuentas y 5 movimientos—. El respaldo `.wena` es otra cosa y también va cifrado, pero con la contraseña del usuario y no con la llave del teléfono: eso es justamente lo que lo hace restaurable en otro teléfono.
 - **Fase 5.2 — captura por SMS** (idea para cuando aparezcan avisos perdidos): leer los SMS del banco con `READ_SMS`. Un SMS recibido con el teléfono apagado se entrega al encender, así que sería la única fuente capaz de recuperar un movimiento que ocurrió sin el teléfono prendido. Pide permiso nuevo y un parser por banco, porque el texto del SMS no se parece al de la notificación. Antes de construirla hay que confirmar que el banco **manda** SMS de movimientos: Banco Falabella no los manda (solo códigos de seguridad), así que ahí no habría nada que leer.
 - **Estado de los bancos en Diagnóstico**: por cada paquete cubierto, mostrar si está habilitado y si puede publicar notificaciones (y, mejor, si está instalado), con un botón para abrir sus ajustes. Es exactamente la comprobación que faltó cuando el retiro con Falabella no apareció: habría mostrado de inmediato que **la app del banco estaba instalada como `cl.android`, fuera de la lista de `BankSource`** —esa era la causa, no el teléfono apagado— y que la de la tienda estaba deshabilitada.
 - **Recordatorios de respaldo**: un aviso (sin permisos nuevos) cuando pasan 30 días desde el último respaldo, usando la fecha que se guarde en `SharedPreferences`.
