@@ -16,6 +16,7 @@ import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
+import cl.wenasea.wenagastos.data.repo.SnapshotRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRunner
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.importexport.DocumentFiles
@@ -79,6 +80,9 @@ class AppContainer(application: Application) {
 
     val accounts by lazy { AccountRepository(database.accountDao()) }
 
+    /** Cortes de saldo por cuenta: lo que el banco dijo una vez, más los movimientos posteriores. */
+    val snapshots by lazy { SnapshotRepository(database.accountSnapshotDao()) }
+
     /** Unir dos cuentas en una: la tarjeta de débito pasa a ser un número de la cuenta. */
     val accountMerge by lazy {
         AccountMergeRepository(
@@ -88,6 +92,7 @@ class AppContainer(application: Application) {
             },
             accounts = database.accountDao(),
             movements = database.transactionDao(),
+            snapshots = database.accountSnapshotDao(),
         )
     }
     val categories by lazy { CategoryRepository(database.categoryDao()) }
@@ -95,7 +100,7 @@ class AppContainer(application: Application) {
     val captureLogs by lazy { CaptureLogRepository(database.captureLogDao()) }
     val rules by lazy { MerchantRuleRepository(database.merchantRuleDao(), categories) }
 
-    /** Exportar y respaldar: la foto de las cuatro tablas y la restauración en bloque. */
+    /** Exportar y respaldar: la foto de las cinco tablas y la restauración en bloque. */
     val backup by lazy {
         BackupRepository(
             database,
@@ -103,6 +108,7 @@ class AppContainer(application: Application) {
             database.categoryDao(),
             database.transactionDao(),
             database.merchantRuleDao(),
+            database.accountSnapshotDao(),
         )
     }
 

@@ -2,11 +2,13 @@ package cl.wenasea.wenagastos.importexport
 
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
+import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
+import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
@@ -84,11 +86,22 @@ class BackupTest {
         updatedAt = 5_000L,
     )
 
+    private val snapshot = AccountSnapshotEntity(
+        id = 7,
+        accountId = 1,
+        asOf = 1_759_000_000_000L,
+        balance = 1_250_000L,
+        source = SnapshotSource.MANUAL,
+        note = "lo que decía el banco",
+        createdAt = 6_000L,
+    )
+
     private val data = BackupData(
         accounts = listOf(account, card),
         categories = listOf(category),
         rules = listOf(rule),
         transactions = listOf(transfer),
+        snapshots = listOf(snapshot),
     )
 
     @Test
@@ -117,10 +130,11 @@ class BackupTest {
         val text = Backup.encode(data, schemaVersion = 5)
 
         assertTrue(text.startsWith("""{"app":"Wenagastos","documento":"respaldo","""))
-        assertTrue(text.contains("\"version\":2"))
+        assertTrue(text.contains("\"version\":3"))
         assertTrue(text.contains("\"schema\":5"))
         assertTrue(text.contains("\"accountLast4\":\"1234\""))
         assertTrue(text.contains("\"cardLast4\":\"5678\""))
+        assertTrue(text.contains("\"saldos\":[{"))
     }
 
     @Test
@@ -139,6 +153,30 @@ class BackupTest {
         val error = assertThrows(BackupException::class.java) { Backup.decode(text) }
 
         assertEquals("El respaldo trae movimientos de una cuenta que no incluye", error.message)
+    }
+
+    @Test
+    fun `un saldo de una cuenta que no viene se rechaza`() {
+        val text = """
+            {"app":"Wenagastos","documento":"respaldo","version":3,
+             "cuentas":[{"id":1,"name":"Cta","colorHex":"#EC0000"}],
+             "saldos":[{"id":1,"accountId":99,"asOf":1760000000000,"balance":1000}]}
+        """.trimIndent()
+
+        val error = assertThrows(BackupException::class.java) { Backup.decode(text) }
+
+        assertEquals("El respaldo trae saldos de una cuenta que no incluye", error.message)
+    }
+
+    /** Un respaldo v2 (antes de los saldos) se sigue leyendo: simplemente no trae cortes. */
+    @Test
+    fun `un respaldo sin saldos se lee con la lista vacia`() {
+        val text = """
+            {"app":"Wenagastos","documento":"respaldo","version":2,"schema":5,
+             "cuentas":[{"id":1,"name":"Cta","colorHex":"#EC0000"}]}
+        """.trimIndent()
+
+        assertTrue(Backup.decode(text).snapshots.isEmpty())
     }
 
     @Test

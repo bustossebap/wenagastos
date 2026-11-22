@@ -2,11 +2,13 @@ package cl.wenasea.wenagastos.capture.fakes
 
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
 import cl.wenasea.wenagastos.data.local.dao.AccountMovementCount
+import cl.wenasea.wenagastos.data.local.dao.AccountSnapshotDao
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
 import cl.wenasea.wenagastos.data.local.dao.MerchantRuleDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
+import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
@@ -62,6 +64,14 @@ class FakeTransactionDao : TransactionDao {
 
     override fun observePendingCount(): Flow<Int> =
         state.map { list -> list.count { it.status == TransactionStatus.PENDING } }
+
+    /**
+     * La consulta real mira `account_snapshots`, tabla que este fake no conoce. El motor de
+     * captura no pide saldos, así que devuelve vacío en vez de inventar cortes; el cálculo del
+     * saldo se prueba en `domain/BalancesTest` con listas de entidades.
+     */
+    override fun observeSinceSnapshotCutoffs(): Flow<List<TransactionEntity>> =
+        state.map { emptyList() }
 
     override suspend fun getById(id: Long): TransactionEntity? = rows[id]
 
@@ -246,6 +256,80 @@ class FakeAccountDao : AccountDao {
     override suspend fun deleteById(id: Long) {
         rows.remove(id)
         publish()
+    }
+
+    override suspend fun deleteAll() {
+        rows.clear()
+        publish()
+    }
+}
+
+/**
+ * Cortes de saldo en memoria. Imita el SQL de [AccountSnapshotDao]: el "vigente" es el de `asOf`
+ * más alto y, si empatan, el id más alto —el mismo desempate que `Balances.latestByAccount`.
+ */
+class FakeAccountSnapshotDao : AccountSnapshotDao {
+
+    private val rows = linkedMapOf<Long, AccountSnapshotEntity>()
+    private val state = MutableStateFlow<List<AccountSnapshotEntity>>(emptyList())
+    private var nextId = 1L
+
+    val stored: List<AccountSnapshotEntity> get() = rows.values.toList()
+
+    fun seed(vararg snapshots: AccountSnapshotEntity): List<Long> {
+        val ids = snapshots.map { snapshot ->
+            val id = if (snapshot.id == 0L) nextId++ else snapshot.id
+            rows[id] = snapshot.copy(id = id)
+            id
+        }
+        publish()
+        return ids
+    }
+
+    private fun publish() {
+        state.value = rows.values.sortedWith(
+            compareBy<AccountSnapshotEntity> { it.accountId }
+                .thenBy { it.asOf }
+                .thenBy { it.id },
+        )
+    }
+
+    override fun observeAll(): Flow<List<AccountSnapshotEntity>> = state.map { it }
+
+    override fun observeFor(accountId: Long): Flow<List<AccountSnapshotEntity>> = state.map { list ->
+        list.filter { it.accountId == accountId }
+            .sortedWith(compareByDescending<AccountSnapshotEntity> { it.asOf }.thenByDescending { it.id })
+    }
+
+    override suspend fun latestFor(accountId: Long): AccountSnapshotEntity? = rows.values
+        .filter { it.accountId == accountId }
+        .maxWithOrNull(compareBy({ it.asOf }, { it.id }))
+
+    override suspend fun getAll(): List<AccountSnapshotEntity> = stored
+
+    override suspend fun count(): Int = rows.size
+
+    override suspend fun insert(snapshot: AccountSnapshotEntity): Long {
+        val id = if (snapshot.id == 0L) nextId++ else snapshot.id
+        rows[id] = snapshot.copy(id = id)
+        publish()
+        return id
+    }
+
+    override suspend fun insertAll(snapshots: List<AccountSnapshotEntity>) {
+        snapshots.forEach { insert(it) }
+    }
+
+    override suspend fun deleteById(id: Long) {
+        rows.remove(id)
+        publish()
+    }
+
+    override suspend fun moveAccount(from: Long, to: Long): Int {
+        val moving = rows.filterValues { it.accountId == from }.keys.toList()
+        moving.forEach { id -> rows[id] = rows.getValue(id).copy(accountId = to) }
+        publish()
+        return moving.size
     }
 
     override suspend fun deleteAll() {

@@ -28,6 +28,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.balances.BalancesSummaryCard
 import cl.wenasea.wenagastos.ui.common.BackupDueCard
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
@@ -54,6 +55,7 @@ fun DashboardScreen(
     onSeeAllMovements: () -> Unit = {},
     onOpenTransaction: (Long) -> Unit = {},
     onSeeReports: () -> Unit = {},
+    onOpenBalances: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
     val container = LocalContainer.current
@@ -93,6 +95,8 @@ fun DashboardScreen(
         }
 
         item { MonthSummaryCard(state) }
+
+        item { BalancesSummaryCard(onOpen = onOpenBalances) }
 
         if (state.budgetAlerts.isNotEmpty()) {
             item { BudgetAlertsCard(alerts = state.budgetAlerts, onSeeReports = onSeeReports) }

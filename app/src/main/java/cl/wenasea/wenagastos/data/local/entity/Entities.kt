@@ -31,6 +31,41 @@ data class AccountEntity(
     val createdAt: Long = System.currentTimeMillis(),
 )
 
+/**
+ * Saldo confirmado de una cuenta a una fecha: el corte desde el que se calcula el saldo actual
+ * (Fase 7). No se guarda "el saldo de hoy", porque se vence al día siguiente: se guarda lo que el
+ * banco dijo una vez y desde ahí se suman los movimientos confirmados posteriores.
+ *
+ * [asOf] es el instante del corte e **incluye** todo lo ocurrido hasta ahí; por eso el cálculo
+ * suma solo los movimientos con `occurredAt` estrictamente mayor. [balance] puede ser negativo
+ * (un crédito usado o un sobregiro son deudas, no errores). La cuenta —no la tarjeta— es la dueña
+ * del saldo: la de débito gasta de la misma cuenta.
+ */
+@Entity(
+    tableName = "account_snapshots",
+    indices = [Index(value = ["accountId", "asOf"])],
+    foreignKeys = [
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class AccountSnapshotEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val accountId: Long,
+    /** Epoch millis del corte: el saldo ya incluye lo que pasó hasta este instante. */
+    val asOf: Long,
+    /** Saldo en pesos chilenos tal como lo dice el banco. */
+    val balance: Long,
+    val source: SnapshotSource = SnapshotSource.MANUAL,
+    /** Lo que anotó el usuario o la fila de la cartola de la que salió. */
+    val note: String? = null,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Entity(tableName = "categories")
 data class CategoryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

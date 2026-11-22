@@ -144,6 +144,26 @@ interface TransactionDao {
     @Query("SELECT * FROM transactions ORDER BY occurredAt ASC, id ASC")
     suspend fun getAll(): List<TransactionEntity>
 
+    /**
+     * Solo lo que puede mover un saldo: los movimientos posteriores al corte más viejo que haya.
+     * Cada cuenta suma los que están después de **su** corte, así que este conjunto es un
+     * superconjunto y el cálculo fino se hace en `domain/Balances.kt`.
+     *
+     * Sin ningún corte no se devuelve nada, a propósito: el historial completo no sirve para
+     * calcular saldos (empieza tarde y está incompleto) y cargarlo en cada refresco del inicio
+     * sería pagar por nada.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE occurredAt > COALESCE(
+            (SELECT MIN(asOf) FROM account_snapshots), 9223372036854775807
+        )
+        ORDER BY occurredAt ASC, id ASC
+        """,
+    )
+    fun observeSinceSnapshotCutoffs(): Flow<List<TransactionEntity>>
+
     /** Vacía la tabla. Solo lo usa la restauración de un respaldo, dentro de una transacción. */
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()

@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.data.repo
 
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
+import cl.wenasea.wenagastos.data.local.dao.AccountSnapshotDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
@@ -56,6 +57,7 @@ class AccountMergeRepository(
     private val runner: TransactionRunner,
     private val accounts: AccountDao,
     private val movements: TransactionDao,
+    private val snapshots: AccountSnapshotDao,
 ) {
 
     /**
@@ -91,6 +93,9 @@ class AccountMergeRepository(
             val now = System.currentTimeMillis()
             movements.moveMovements(mergeId, keepId, now)
             movements.moveTransferLegs(mergeId, keepId, now)
+            // El saldo es de la cuenta: si la tarjeta tenía un corte propio, ahora es de la cuenta
+            // que se queda. El corte más nuevo de las dos es el que manda.
+            snapshots.moveAccount(mergeId, keepId)
 
             val cards = (parseNumbers(plan.keep.cardLast4) + parseNumbers(plan.merge.cardLast4))
                 .distinct()

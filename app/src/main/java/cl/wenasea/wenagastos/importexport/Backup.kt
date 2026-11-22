@@ -2,11 +2,13 @@ package cl.wenasea.wenagastos.importexport
 
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
+import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
+import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
@@ -19,9 +21,15 @@ data class BackupData(
     val categories: List<CategoryEntity> = emptyList(),
     val rules: List<MerchantRuleEntity> = emptyList(),
     val transactions: List<TransactionEntity> = emptyList(),
+    /** Cortes de saldo (Fase 7). Un respaldo viejo no los trae: se lee como lista vacía. */
+    val snapshots: List<AccountSnapshotEntity> = emptyList(),
 ) {
     val isEmpty: Boolean
-        get() = accounts.isEmpty() && categories.isEmpty() && rules.isEmpty() && transactions.isEmpty()
+        get() = accounts.isEmpty() &&
+            categories.isEmpty() &&
+            rules.isEmpty() &&
+            transactions.isEmpty() &&
+            snapshots.isEmpty()
 }
 
 /**
@@ -42,8 +50,11 @@ object Backup {
      * v2 partió `last4` en el número de la cuenta y los de sus tarjetas. Un v1 se sigue leyendo:
      * el primer número de una corriente/ahorro pasa a ser el de la cuenta y el resto tarjetas, y
      * en débito/crédito todo es tarjeta.
+     *
+     * v3 agrega `saldos`, los cortes de la Fase 7. Un archivo v2 se lee igual: sin cortes, el
+     * saldo de las cuentas queda sin saberse hasta que se escriba uno nuevo.
      */
-    const val VERSION = 2
+    const val VERSION = 3
 
     fun encode(
         data: BackupData,
@@ -61,11 +72,13 @@ object Backup {
                 "categorias" to data.categories.size,
                 "reglas" to data.rules.size,
                 "movimientos" to data.transactions.size,
+                "saldos" to data.snapshots.size,
             ),
             "cuentas" to data.accounts.map(::accountJson),
             "categorias" to data.categories.map(::categoryJson),
             "reglas" to data.rules.map(::ruleJson),
             "movimientos" to data.transactions.map(::transactionJson),
+            "saldos" to data.snapshots.map(::snapshotJson),
         ),
     )
 
@@ -126,6 +139,16 @@ object Backup {
         "updatedAt" to transaction.updatedAt,
     )
 
+    private fun snapshotJson(snapshot: AccountSnapshotEntity): Map<String, Any?> = linkedMapOf(
+        "id" to snapshot.id,
+        "accountId" to snapshot.accountId,
+        "asOf" to snapshot.asOf,
+        "balance" to snapshot.balance,
+        "source" to snapshot.source.name,
+        "note" to snapshot.note,
+        "createdAt" to snapshot.createdAt,
+    )
+
     /** Lee un respaldo y valida que se pueda restaurar entero. Falla con un mensaje claro. */
     fun decode(text: String): BackupData {
         val root = root(text)
@@ -136,6 +159,7 @@ object Backup {
             categories = root.children("categorias").map(::toCategory),
             rules = root.children("reglas").map(::toRule),
             transactions = root.children("movimientos").map(::toTransaction),
+            snapshots = root.children("saldos").map(::toSnapshot),
         )
         validate(data)
         return data
@@ -281,6 +305,25 @@ object Backup {
     }
 
     /**
+     * Un corte de saldo. El monto puede ser negativo (deuda de la tarjeta o sobregiro) y cero; lo
+     * que sí no puede faltar es la fecha, porque el saldo cuelga de ella.
+     */
+    private fun toSnapshot(map: Map<String, Any?>): AccountSnapshotEntity {
+        val asOf = map.requiredLong("asOf")
+        if (asOf <= 0) throw BackupException("El respaldo trae un saldo sin fecha")
+        return AccountSnapshotEntity(
+            id = map.requiredLong("id"),
+            accountId = map.requiredLong("accountId"),
+            asOf = asOf,
+            balance = map.requiredLong("balance"),
+            source = SnapshotSource.entries.firstOrNull { it.name == map.string("source") }
+                ?: SnapshotSource.MANUAL,
+            note = map.string("note"),
+            createdAt = map.long("createdAt") ?: 0L,
+        )
+    }
+
+    /**
      * Un respaldo a medio escribir es peor que ninguno: antes de borrar nada se comprueba que
      * cada movimiento apunte a una cuenta que viene en el archivo y que no haya ids repetidos
      * (la inserción fallaría a mitad de camino y la transacción se revertiría igual, pero así el
@@ -311,6 +354,17 @@ object Backup {
         }
         if (data.rules.any { rule -> rule.categoryId?.let { it !in categoryIds } == true }) {
             throw BackupException("El respaldo trae reglas con una categoría que no incluye")
+        }
+        if (data.snapshots.any { it.id <= 0 }) {
+            throw BackupException("El respaldo trae un saldo sin id")
+        }
+        if (data.snapshots.map { it.id }.toSet().size != data.snapshots.size) {
+            throw BackupException("El respaldo repite saldos")
+        }
+        // Un corte sin su cuenta no se puede restaurar: la llave foránea lo rechazaría a mitad de
+        // camino y el mensaje no diría cuál es el problema.
+        if (data.snapshots.any { it.accountId !in accountIds }) {
+            throw BackupException("El respaldo trae saldos de una cuenta que no incluye")
         }
     }
 }

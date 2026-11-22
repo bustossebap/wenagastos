@@ -17,6 +17,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import cl.wenasea.wenagastos.ui.balances.BalancesScreen
 import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsScreen
 import cl.wenasea.wenagastos.ui.editor.TransactionEditorScreen
 import cl.wenasea.wenagastos.ui.home.DashboardScreen
@@ -32,6 +33,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val RULES = "rules"
     const val CAPTURE = "capture"
+    const val BALANCES = "balances"
     const val EDITOR = "editor?txId={txId}"
 
     fun editor(txId: Long): String = "editor?txId=$txId"
@@ -95,6 +97,7 @@ fun WenagastosNavHost() {
                     onSeeAllMovements = { navController.navigate(Routes.MOVEMENTS) },
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
                     onSeeReports = { navController.navigate(Routes.REPORTS) },
+                    onOpenBalances = { navController.navigate(Routes.BALANCES) },
                     onOpenSettings = {
                         navController.navigate(Routes.SETTINGS) {
                             popUpTo(Routes.HOME) { saveState = true }
@@ -125,6 +128,9 @@ fun WenagastosNavHost() {
             }
             composable(Routes.CAPTURE) {
                 CaptureDiagnosticsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(Routes.BALANCES) {
+                BalancesScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = Routes.EDITOR,

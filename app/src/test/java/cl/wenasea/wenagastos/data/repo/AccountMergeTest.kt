@@ -1,9 +1,11 @@
 package cl.wenasea.wenagastos.data.repo
 
 import cl.wenasea.wenagastos.capture.fakes.FakeAccountDao
+import cl.wenasea.wenagastos.capture.fakes.FakeAccountSnapshotDao
 import cl.wenasea.wenagastos.capture.fakes.FakeTransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
+import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
@@ -24,6 +26,7 @@ class AccountMergeTest {
 
     private val accounts = FakeAccountDao()
     private val movements = FakeTransactionDao()
+    private val snapshots = FakeAccountSnapshotDao()
 
     private val repository = AccountMergeRepository(
         runner = object : TransactionRunner {
@@ -31,6 +34,7 @@ class AccountMergeTest {
         },
         accounts = accounts,
         movements = movements,
+        snapshots = snapshots,
     )
 
     private fun account(
@@ -187,5 +191,26 @@ class AccountMergeTest {
         }
 
         assertEquals("Son la misma cuenta", error.message)
+    }
+
+    /**
+     * El saldo es de la cuenta, y la fusión borra la cuenta que se une: si su corte se quedara
+     * apuntándole, la llave foránea lo borraría en cascada y el saldo se perdería en silencio.
+     */
+    @Test
+    fun `la fusion se lleva los saldos a la cuenta que se queda`() = runBlocking {
+        val (checkingId, debitId) = accounts.seed(
+            account("Santander Cta. Cte.", accountLast4 = "1483"),
+            account("Santander Débito", kind = AccountKind.DEBIT, cardLast4 = "4321"),
+        )
+        snapshots.seed(
+            AccountSnapshotEntity(accountId = debitId, asOf = 1_000L, balance = 250_000L),
+        )
+
+        repository.merge(repository.plan(checkingId, debitId))
+
+        val moved = snapshots.stored.single()
+        assertEquals(checkingId, moved.accountId)
+        assertEquals(250_000L, moved.balance)
     }
 }

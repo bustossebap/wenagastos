@@ -43,3 +43,12 @@ enum class TransactionStatus(val label: String) {
     CONFIRMED("Confirmado"),
     IGNORED("Ignorado"),
 }
+
+/**
+ * De dónde salió un saldo confirmado: escrito a mano en la app o leído de una cartola del banco
+ * (Fase 8). La diferencia es solo para mostrarla: los dos son cortes iguales de fiar.
+ */
+enum class SnapshotSource(val label: String) {
+    MANUAL("A mano"),
+    CARTOLA("Cartola"),
+}

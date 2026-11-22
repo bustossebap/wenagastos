@@ -1,11 +1,13 @@
 package cl.wenasea.wenagastos.data.repo
 
 import cl.wenasea.wenagastos.data.local.dao.AccountDao
+import cl.wenasea.wenagastos.data.local.dao.AccountSnapshotDao
 import cl.wenasea.wenagastos.data.local.dao.CaptureLogDao
 import cl.wenasea.wenagastos.data.local.dao.CategoryDao
 import cl.wenasea.wenagastos.data.local.dao.MerchantRuleDao
 import cl.wenasea.wenagastos.data.local.dao.TransactionDao
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
+import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
@@ -39,6 +41,33 @@ class AccountRepository(private val dao: AccountDao) {
     suspend fun countMovements(id: Long) = dao.countMovements(id)
 
     suspend fun count() = dao.count()
+}
+
+/**
+ * Cortes de saldo (Fase 7). Son de solo agregar: un corte nuevo manda desde su fecha, y si se
+ * cargó mal se borra para que vuelva a mandar el anterior. Los movimientos no se tocan: el saldo
+ * actual se calcula, no se guarda.
+ */
+class SnapshotRepository(private val dao: AccountSnapshotDao) {
+
+    fun observeAll() = dao.observeAll()
+
+    fun observeFor(accountId: Long) = dao.observeFor(accountId)
+
+    suspend fun latest(accountId: Long) = dao.latestFor(accountId)
+
+    suspend fun list() = dao.getAll()
+
+    suspend fun count() = dao.count()
+
+    suspend fun add(snapshot: AccountSnapshotEntity) = dao.insert(snapshot)
+
+    suspend fun delete(id: Long) = dao.deleteById(id)
+
+    /** Borra el corte vigente: el saldo vuelve a no saberse y manda el corte anterior, si hay. */
+    suspend fun forgetLatest(accountId: Long) {
+        dao.latestFor(accountId)?.let { dao.deleteById(it.id) }
+    }
 }
 
 class CategoryRepository(private val dao: CategoryDao) {
@@ -151,6 +180,9 @@ class TransactionRepository(private val dao: TransactionDao) {
     fun observeRecent(limit: Int) = dao.observeRecent(limit)
 
     fun observePendingCount() = dao.observePendingCount()
+
+    /** Lo que puede mover un saldo: todo lo posterior al corte más viejo (ver el DAO). */
+    fun observeSinceSnapshotCutoffs() = dao.observeSinceSnapshotCutoffs()
 
     suspend fun get(id: Long) = dao.getById(id)
 

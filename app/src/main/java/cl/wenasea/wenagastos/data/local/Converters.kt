@@ -6,6 +6,7 @@ import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
+import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 
@@ -52,4 +53,10 @@ class Converters {
 
     @TypeConverter
     fun stringToOutcome(value: String): CaptureOutcome = CaptureOutcome.valueOf(value)
+
+    @TypeConverter
+    fun snapshotSourceToString(value: SnapshotSource): String = value.name
+
+    @TypeConverter
+    fun stringToSnapshotSource(value: String): SnapshotSource = SnapshotSource.valueOf(value)
 }
