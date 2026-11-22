@@ -23,7 +23,6 @@ import cl.wenasea.wenagastos.domain.splitNumbers
 import cl.wenasea.wenagastos.importexport.Backup
 import cl.wenasea.wenagastos.importexport.BackupCrypto
 import cl.wenasea.wenagastos.importexport.BackupException
-import cl.wenasea.wenagastos.importexport.Csv
 import cl.wenasea.wenagastos.importexport.DocumentFiles
 import cl.wenasea.wenagastos.importexport.Export
 import cl.wenasea.wenagastos.importexport.Json
@@ -303,11 +302,13 @@ class SettingsViewModel(
      * Lo que ya había llegado por aviso no se duplica: se cruza por día, monto y sentido.
      */
     fun importStatement(account: AccountEntity, uri: Uri) = runTask {
-        val text = files.readText(uri)
-        val sheet = StatementImport.read(Csv.split(text), formats.templateFor(account.institution))
+        val sheet = StatementImport.read(
+            files.statementSheet(uri),
+            formats.templateFor(account.institution),
+        )
             ?: throw StatementException(
                 "No reconocí la cartola: no encontré la fila de títulos con la fecha y el monto. " +
-                    "Exporta la cartola del mes como CSV desde el sitio del banco.",
+                    "Prueba con la cartola en CSV o en PDF desde el sitio del banco.",
             )
         // Acertó la lectura: la próxima cartola de este banco se lee con la misma plantilla.
         formats.remember(account.institution, sheet.template)

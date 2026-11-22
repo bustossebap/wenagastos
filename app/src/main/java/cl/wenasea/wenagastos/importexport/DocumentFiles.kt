@@ -38,18 +38,28 @@ class DocumentFiles(private val resolver: ContentResolver) {
                 if (read < 0) break
                 if (read == 0) continue
                 out.write(buffer, 0, read)
-                if (out.size() > maxBytes) throw IOException("El archivo es muy grande para un respaldo")
+                if (out.size() > maxBytes) throw IOException("El archivo es demasiado grande para leerlo")
             }
             return out.toByteArray()
         }
     }
 
     /**
-     * Texto de un archivo del usuario. La cartola la exporta el banco —o el Excel— en UTF-8 o en
-     * windows-1252, y elegir mal deja los comercios llenos de signos raros: se prueba UTF-8
-     * estricto primero, que falla en cuanto aparece un byte que no es UTF-8.
+     * La cartola como hoja de filas. El banco la entrega en CSV o —Santander— en PDF, y el tipo
+     * que el selector declara no siempre acierta, así que manda el contenido: si el archivo empieza
+     * con `%PDF-` la tabla se saca del PDF; si no, es un texto que se separa por comas.
      */
-    fun readText(uri: Uri, maxBytes: Int = MAX_BYTES): String = decode(read(uri, maxBytes))
+    fun statementSheet(uri: Uri, maxBytes: Int = MAX_BYTES): Csv.Sheet {
+        val bytes = read(uri, maxBytes)
+        if (Pdf.looksLikePdf(bytes)) {
+            // El PDF no es un archivo dañado: es una cartola con un dibujo que no se pudo leer.
+            return Pdf.sheet(bytes) ?: throw StatementException(
+                "El PDF no trae una tabla de movimientos que sepa leer. " +
+                    "Prueba con la cartola en CSV desde el sitio del banco.",
+            )
+        }
+        return Csv.split(decode(bytes))
+    }
 
     /**
      * El nombre con que el usuario conoce el archivo ("cartola-noviembre.csv"). Sirve para que el
@@ -74,7 +84,12 @@ class DocumentFiles(private val resolver: ContentResolver) {
         const val BACKUP_MIME = "application/octet-stream"
 
         /** El selector de la cartola: los bancos no coinciden en el tipo que declaran. */
-        val TEXT_MIMES = arrayOf("text/*", "text/comma-separated-values", "application/vnd.ms-excel")
+        val TEXT_MIMES = arrayOf(
+            "text/*",
+            "text/comma-separated-values",
+            "application/vnd.ms-excel",
+            "application/pdf",
+        )
 
         private val LATIN = Charset.forName("windows-1252")
 
