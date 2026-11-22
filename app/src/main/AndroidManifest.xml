@@ -4,6 +4,23 @@
     <!-- Bloqueo al abrir: huella o rostro con el diálogo del sistema (el PIN no la necesita). -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
+    <!--
+        Diagnóstico pregunta por estas apps (¿instalada? ¿habilitada? ¿puede avisar?).
+        Desde Android 11 un paquete invisible responde "no existe", así que sin esta lista el
+        diagnóstico diría "No instalada" para todas, que es justo el error que debe evitar.
+        Se listan los paquetes de `BankSource` uno por uno y no QUERY_ALL_PACKAGES: la app no
+        necesita ver nada más del teléfono.
+    -->
+    <queries>
+        <package android:name="cl.santander.smartphone" />
+        <package android:name="cl.santander.santanderpasschile" />
+        <package android:name="cl.android" />
+        <package android:name="com.mercadopago.wallet" />
+        <package android:name="com.krealo.tenpo" />
+        <package android:name="cl.bancochile.mi_banco" />
+        <package android:name="com.google.android.apps.walletnfcrel" />
+    </queries>
+
     <application
         android:name=".WenagastosApp"
         android:allowBackup="false"
@@ -27,7 +44,8 @@
         <!--
             Lee las notificaciones del banco para registrar los gastos automáticamente.
             Requiere que el usuario active "Acceso a notificaciones" en Ajustes del teléfono.
-            No se declara ninguna app "consultable": solo se escuchan los paquetes del banco.
+            La lista `<queries>` de arriba es solo para Diagnóstico: lo que se escucha sigue
+            siendo únicamente lo que decida `BankSource`.
         -->
         <service
             android:name=".capture.WenagastosNotificationListener"

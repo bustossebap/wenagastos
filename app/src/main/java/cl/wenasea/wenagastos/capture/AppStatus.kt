@@ -64,14 +64,29 @@ class AppLookup(private val context: Context) {
         val info = applicationInfo(packageName) ?: return AppFacts(installed = false)
         return AppFacts(
             installed = true,
-            enabled = info.enabled,
+            enabled = info.enabled && !isDisabledByUser(packageName),
             canNotify = canNotify(packageName, info),
         )
     }
 
-    /** Una fila por fuente que declare paquetes: MACH llega solo por correo, no tiene app. */
+    /**
+     * `ApplicationInfo.enabled` trae el estado del manifiesto, y no siempre el "desactivar" que el
+     * usuario hizo desde Ajustes. La consulta explícita es la que gana: es justo el caso de la app
+     * de la tienda Falabella, que estaba deshabilitada y por eso no publicaba nada.
+     */
+    private fun isDisabledByUser(packageName: String): Boolean = try {
+        context.packageManager.getApplicationEnabledSetting(packageName) ==
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+    } catch (error: IllegalArgumentException) {
+        false
+    }
+
+    /**
+     * Una fila por fuente que declare paquetes: MACH llega solo por correo, no tiene app, y
+     * [BankSource.SHELL] existe únicamente para las pruebas por `adb`.
+     */
     fun rows(): List<SourceRow> = BankSource.entries
-        .filter { it.packages.isNotEmpty() }
+        .filter { it != BankSource.SHELL && it.packages.isNotEmpty() }
         .map { source ->
             val byPackage = source.packages.associateWith { facts(it) }
             SourceRow(

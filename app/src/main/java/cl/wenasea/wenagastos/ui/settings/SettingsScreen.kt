@@ -49,8 +49,23 @@ import cl.wenasea.wenagastos.ui.common.asColor
  * y Banco Falabella).
  */
 private val capturedSources: String = BankSource.entries
-    .filter { it != BankSource.SHELL }
+    .filter { it != BankSource.SHELL && it.packages.isNotEmpty() }
     .joinToString(", ") { it.label }
+
+/** Fuentes que no tienen app y solo se leen por correo (hoy, MACH). */
+private val mailSources: String = BankSource.entries
+    .filter { it != BankSource.SHELL && it.packages.isEmpty() }
+    .joinToString(", ") { it.label }
+
+/** «los avisos de A, B y los correos de MACH», según lo que declare [BankSource]. */
+private val capturedSummary: String = buildString {
+    append("los avisos de ")
+    append(capturedSources)
+    if (mailSources.isNotEmpty()) {
+        append(" y los correos de ")
+        append(mailSources)
+    }
+}
 
 @Composable
 fun SettingsScreen(
@@ -112,7 +127,7 @@ fun SettingsScreen(
                     SectionHeader(title = "Captura automática")
                     Text(
                         text = if (accessEnabled) {
-                            "Activa. Wenagastos lee los avisos de $capturedSources, y los " +
+                            "Activa. Wenagastos lee $capturedSummary, y los " +
                                 "anota como movimientos."
                         } else {
                             "Desactivada. Para que los gastos se anoten solos hay que dar " +
