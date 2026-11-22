@@ -25,6 +25,19 @@ class MailSourceTest {
     }
 
     @Test
+    fun `un correo de MACHBANK se reconoce como MACH`() {
+        // Gmail pone el remitente en el título: así llega el aviso de una transferencia recibida.
+        assertEquals(BankSource.MACH, MailSource.of("MACHBANK"))
+        assertEquals(BankSource.MACH, MailSource.of("MACHBANK <no-reply@machbank.cl>"))
+    }
+
+    @Test
+    fun `otro remitente que empieza con mach no se confunde con MACH`() {
+        assertNull(MailSource.of("Machine Learning Weekly"))
+        assertNull(MailSource.of("MACHALINES"))
+    }
+
+    @Test
     fun `un correo de otra parte no se reconoce`() {
         assertNull(MailSource.of("GitHub"))
         assertNull(MailSource.of(""))

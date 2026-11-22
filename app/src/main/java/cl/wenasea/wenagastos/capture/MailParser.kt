@@ -36,6 +36,11 @@ import java.time.LocalDateTime
  * cuenta del destinatario son números largos que un extractor a ciegas podría tomar por monto,
  * y el número de cuenta del destinatario no es la cuenta del usuario (la propia es la de origen).
  *
+ * El correo de MACHBANK va al revés: avisa la plata que **entra** y el nombre de quien la mandó
+ * va en la frase, no en un campo ("Recibiste una transferencia de Nicolás Bustos"). Ahí la cuenta
+ * propia es "Cuenta destino", el banco de la contraparte viene en "Banco destino" y la hora está
+ * pegada a la fecha ("21/11/2026 - 19:52:59").
+ *
  * Se exige que el correo anuncie un movimiento y traiga un monto en pesos: una promoción
  * ("hasta $50.000 de descuento") se descarta antes de tocar la base.
  */
@@ -63,6 +68,7 @@ object MailParser {
     private val MOVEMENT = listOf(
         Regex("""aviso\s+de\s+transferencia""", RegexOption.IGNORE_CASE),
         Regex("""transferencia\s+de\s+fondos""", RegexOption.IGNORE_CASE),
+        Regex("""(recibiste|acabas\s+de\s+recibir)\s+una\s+transferencia""", RegexOption.IGNORE_CASE),
         Regex("""(realizaste|efectuaste|hiciste)\s+una\s+transferencia""", RegexOption.IGNORE_CASE),
         Regex("""\btransferiste\b""", RegexOption.IGNORE_CASE),
         Regex("""comprobante\s+de""", RegexOption.IGNORE_CASE),
@@ -75,6 +81,27 @@ object MailParser {
         """(?:transferencia|transferiste|envio|pago)\s+(?:a|para)\s+(.+)$""",
         RegexOption.IGNORE_CASE,
     )
+
+    /**
+     * "Recibiste una transferencia de Nicolás Bustos": MACH no pone el nombre en un campo, lo
+     * cuenta en la frase. Sirve en los dos lados del aviso ("… sin costo desde MACHBANK"),
+     * así que el nombre se corta donde empieza la explicación.
+     */
+    private val SENTENCE_SENDER = Regex(
+        """(?:recibiste|recibimos|acabas\s+de\s+recibir)\s+una\s+transferencia\s+de\s+""" +
+            """(.{2,60}?)(?=\s+(?:sin|por|desde|en|con)\b|[.,;:]|$)""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * "Banco destino / Banco Falabella": el aviso viene del banco de la contraparte, que no es
+     * donde el usuario tiene la cuenta. Ese correo completa un movimiento, no lo crea.
+     */
+    private val COUNTERPART_BANK = arrayOf("banco destino", "banco de destino")
+
+    /** Dónde escribe el banco el número de la cuenta propia, según para dónde va la plata. */
+    private val INCOMING_ACCOUNT = arrayOf("cuenta de destino", "cuenta destino")
+    private val OUTGOING_ACCOUNT = arrayOf("cuenta de origen", "cuenta origen")
 
     private val DATE = Regex("""(\d{1,2})[-/](\d{1,2})[-/](\d{4})""")
     private val TIME = Regex("""(\d{1,2}):(\d{2})""")
@@ -122,13 +149,14 @@ object MailParser {
                 merchant = merchant,
                 merchantFound = target != null || isTransfer,
                 direction = direction,
-                last4 = originLast4(lines),
+                last4 = ownAccountLast4(lines, direction),
                 // Una transferencia sale de una cuenta corriente, no de una tarjeta de crédito.
                 cardIsCredit = false,
                 source = source,
                 occurredAt = occurredAt(lines, raw.postedAt),
                 rawText = body,
                 isTransfer = isTransfer,
+                isCounterpart = isCounterpart(lines, source, direction),
             ),
         )
     }
@@ -156,13 +184,17 @@ object MailParser {
 
     /**
      * El sentido sale del lado propio que nombra el correo: "Cuenta de origen" es plata que salió
-     * y "Cuenta de destino" plata que entró. Los verbos, cuando están, tienen la última palabra.
+     * y "Cuenta de destino" plata que entró. Sin esos campos manda quién queda nombrado
+     * ("Nombre remitente" o "Nombre destinatario"), y los verbos tienen la última palabra.
      */
     private fun direction(lines: List<String>, body: String): Direction {
         DirectionDetector.detect(body)?.let { return it }
-        val outgoing = field(lines, "cuenta de origen", "nombre destinatario", "destinatario") != null
-        val incoming = field(lines, "cuenta de destino", "nombre remitente", "remitente") != null
-        return if (incoming && !outgoing) Direction.CREDIT else Direction.DEBIT
+        val incoming = field(lines, *INCOMING_ACCOUNT) != null
+        val outgoing = field(lines, *OUTGOING_ACCOUNT) != null
+        if (incoming != outgoing) return if (incoming) Direction.CREDIT else Direction.DEBIT
+        val toSomeone = field(lines, "nombre destinatario", "destinatario") != null
+        val fromSomeone = field(lines, "nombre remitente", "remitente") != null
+        return if (fromSomeone && !toSomeone) Direction.CREDIT else Direction.DEBIT
     }
 
     /** A quién fue (o de quién vino) la plata. */
@@ -173,6 +205,13 @@ object MailParser {
             arrayOf("nombre remitente", "nombre del remitente", "remitente")
         }
         field(lines, *labels)?.let { return cleanName(it) }
+        // MACH cuenta el nombre en la frase en vez de ponerlo en un campo.
+        if (direction == Direction.CREDIT) {
+            for (line in lines) {
+                val match = SENTENCE_SENDER.find(line) ?: continue
+                match.groupValues[1].let(::cleanName)?.let { return it }
+            }
+        }
         field(lines, "asunto")?.let { subject ->
             SUBJECT_TARGET.find(subject)?.groupValues?.get(1)?.let { return cleanName(it) }
         }
@@ -188,14 +227,33 @@ object MailParser {
     }
 
     /**
-     * Últimos 4 de la cuenta de origen. Se toma solo "Cuenta de origen": el número que aparece
-     * antes, en "Número de cuenta", es la cuenta del destinatario y llevaría a la cuenta equivocada.
+     * Últimos 4 de la cuenta propia. En un aviso de plata que sale es "Cuenta de origen"; en uno
+     * de plata que entra, "Cuenta de destino": el banco de la contraparte escribe ahí el número
+     * de la cuenta que recibió, y el "Número de cuenta" del detalle es el del otro lado.
      */
-    private fun originLast4(lines: List<String>): String? {
-        val origin = field(lines, "cuenta de origen") ?: return null
-        val digits = origin.filter(Char::isDigit)
+    private fun ownAccountLast4(lines: List<String>, direction: Direction): String? {
+        val labels = if (direction == Direction.DEBIT) OUTGOING_ACCOUNT else INCOMING_ACCOUNT
+        val own = field(lines, *labels) ?: return null
+        val digits = own.filter(Char::isDigit)
         // Un número de cuenta chileno tiene 8 o más dígitos; menos es un folio o un monto.
         return if (digits.length >= 8) digits.takeLast(4) else null
+    }
+
+    /**
+     * `true` si el correo viene del banco de la contraparte: nombra una cuenta propia, pero no es
+     * la cuenta del usuario en ese banco (MACH avisa "Banco destino: Banco Falabella").
+     */
+    private fun isCounterpart(
+        lines: List<String>,
+        source: BankSource,
+        direction: Direction,
+    ): Boolean {
+        if (direction != Direction.CREDIT) return false
+        val bank = TextNorm.plain(field(lines, *COUNTERPART_BANK) ?: return false)
+        val own = TextNorm.plain(source.label)
+        if (bank.isEmpty() || own.isEmpty()) return false
+        // "BCI MACH" contiene el nombre de la fuente: entonces el correo sí es de la cuenta.
+        return !bank.contains(own) && !own.contains(bank)
     }
 
     /**
@@ -204,12 +262,14 @@ object MailParser {
      * la notificación.
      */
     private fun occurredAt(lines: List<String>, postedAt: Long): Long {
-        val date = DATE.find(field(lines, "fecha") ?: return postedAt) ?: return postedAt
+        val dateLine = field(lines, "fecha") ?: return postedAt
+        val date = DATE.find(dateLine) ?: return postedAt
         val day = date.groupValues[1].toIntOrNull() ?: return postedAt
         val month = date.groupValues[2].toIntOrNull() ?: return postedAt
         val year = date.groupValues[3].toIntOrNull() ?: return postedAt
 
-        val time = field(lines, "hora")?.let { TIME.find(it) }
+        // Algunos bancos pegan la hora al campo de la fecha ("21/11/2026 - 19:52:59").
+        val time = (field(lines, "hora") ?: dateLine).let { TIME.find(it) }
         val hour = time?.groupValues?.get(1)?.toIntOrNull() ?: 0
         val minute = time?.groupValues?.get(2)?.toIntOrNull() ?: 0
 

@@ -359,4 +359,33 @@ class NotifParserTest {
         assertNull(n.last4)
         assertEquals(Direction.DEBIT, n.direction)
     }
+
+    @Test
+    fun `el push de Falabella que solo trae el monto no inventa un comercio`() {
+        val n = parsed(
+            packageName = "cl.android",
+            title = "Recibiste $12.000",
+            text = "Te transfirieron $12.000 a tu Cuenta Banco Falabella 8777. " +
+                "¡Ingresa a la App y revisa tus movimientos!",
+        )
+
+        assertEquals(12_000L, n.amount)
+        assertEquals(Direction.CREDIT, n.direction)
+        // "tu Cuenta Banco Falabella 8777" es una frase del aviso, no un comercio.
+        assertEquals("Transferencia recibida", n.merchant)
+        assertFalse(n.merchantFound)
+        assertFalse(n.isConfident)
+        assertEquals("8777", n.last4)
+    }
+
+    @Test
+    fun `el numero corto de la cuenta se lee sin decir terminada en`() {
+        val n = parsed(
+            packageName = "cl.android",
+            title = "Recibiste $12.000",
+            text = "Te transfirieron $12.000 a tu Cuenta Banco Falabella 8777",
+        )
+
+        assertEquals("8777", n.last4)
+    }
 }

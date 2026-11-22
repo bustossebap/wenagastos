@@ -142,8 +142,8 @@ class MailParserTest {
         assertEquals(15_000L, n.amount)
         assertEquals("Juan Pérez", n.merchant)
         assertEquals(Direction.CREDIT, n.direction)
-        // Sin "Cuenta de origen" no hay número propio que asignar.
-        assertNull(n.last4)
+        // Lo que entró se anota en la cuenta que dice "Cuenta de destino": es la propia.
+        assertEquals("8777", n.last4)
     }
 
     @Test
@@ -167,5 +167,120 @@ class MailParserTest {
         """.trimIndent()
 
         assertEquals(postedAt, parsed(body).occurredAt)
+    }
+
+    /** Cuerpo real del correo de MACHBANK, tal como lo publica Gmail en `bigText`. */
+    private val machbank = """
+        Recibiste una transferencia de Nicolás Andrés Bustos Ponce
+
+        Recibiste una transferencia
+        Hola Sebastian. Acabas de recibir una transferencia de Nicolás Andrés Bustos Ponce sin costo desde MACHBANK.
+        Detalle
+        Fecha
+        21/11/2026 - 19:52:59
+        Nombre destinatario
+        Sebastian Ignacio Bustos
+        ID
+        19.526.470-8
+        Banco destino
+        Banco Falabella
+        Cuenta destino
+        19834048777
+        Monto
+        ${'$'}12.000
+        Código de confirmación
+        391501572352
+        Te recomendamos no ingresar a tu cuenta desde redes públicas de internet.
+        Enviado con 💜 desde MACHBANK
+    """.trimIndent()
+
+    /** Llegada de la notificación: 19:53:02, unos segundos después de la transferencia. */
+    private val machAt = LocalDateTime.of(2026, 11, 21, 19, 53, 2)
+        .atZone(Dates.zone)
+        .toInstant()
+        .toEpochMilli()
+
+    private fun parsedMach(): ParsedNotification {
+        val result = MailParser.parse(
+            RawNotification(
+                packageName = MailSource.PACKAGE,
+                title = "MACHBANK",
+                text = "Recibiste una transferencia de Nicolás Andrés Bustos Ponce",
+                bigText = machbank,
+                subText = "bustos.sebap@gmail.com",
+                postedAt = machAt,
+                key = "0|${MailSource.PACKAGE}|2|^sq_ig_i_personal|1",
+            ),
+            BankSource.MACH,
+        )
+        assertTrue("se esperaba Parsed y llegó $result", result is ParseResult.Parsed)
+        return (result as ParseResult.Parsed).notification
+    }
+
+    @Test
+    fun `el correo de MACH trae el remitente que el banco receptor no dice`() {
+        val n = parsedMach()
+
+        assertEquals(12_000L, n.amount)
+        // El nombre no está en un campo: está en la frase "Recibiste una transferencia de…".
+        assertEquals("Nicolás Andrés Bustos Ponce", n.merchant)
+        assertTrue(n.merchantFound)
+        assertEquals(Direction.CREDIT, n.direction)
+        assertEquals(BankSource.MACH, n.source)
+        // "Nombre destinatario" es el usuario; el número que importa es el de la cuenta destino.
+        assertEquals("8777", n.last4)
+        assertFalse(n.isTransfer)
+        assertTrue(n.isConfident)
+    }
+
+    @Test
+    fun `el correo de MACH dice que viene del banco de la contraparte`() {
+        val n = parsedMach()
+
+        // "Banco destino: Banco Falabella" con un correo de MACH: el aviso es de la contraparte.
+        assertTrue(n.isCounterpart)
+    }
+
+    @Test
+    fun `la hora del correo de MACH viene pegada a la fecha`() {
+        val esperado = LocalDateTime.of(2026, 11, 21, 19, 52)
+            .atZone(Dates.zone)
+            .toInstant()
+            .toEpochMilli()
+
+        assertEquals(esperado, parsedMach().occurredAt)
+    }
+
+    @Test
+    fun `un aviso de MACH con cuenta de MACH no es de la contraparte`() {
+        val body = """
+            Recibiste una transferencia de Juan Pérez
+            Detalle
+            Fecha
+            21/11/2026 - 10:00:00
+            Banco destino
+            BCI MACH
+            Cuenta destino
+            12345678901
+            Monto
+            ${'$'}5.000
+        """.trimIndent()
+
+        val result = MailParser.parse(
+            RawNotification(
+                packageName = MailSource.PACKAGE,
+                title = "MACHBANK",
+                text = "Recibiste una transferencia de Juan Pérez",
+                bigText = body,
+                postedAt = machAt,
+                key = "0|${MailSource.PACKAGE}|3|^sq_ig_i_personal|1",
+            ),
+            BankSource.MACH,
+        )
+
+        val n = (result as ParseResult.Parsed).notification
+        assertEquals("Juan Pérez", n.merchant)
+        assertFalse(n.isCounterpart)
+        assertEquals("8901", n.last4)
     }
 }

@@ -57,6 +57,17 @@ object MerchantExtractor {
         "el dia de hoy", "hoy", "linea de credito", "tu compra", "la compra",
     )
 
+    /**
+     * Frases que **empiezan** como [NOISE] pero siguen con más palabras: Banco Falabella avisa
+     * "Te transfirieron $12.000 a tu Cuenta Banco Falabella 8777", y eso no es un comercio.
+     * Se comparan por prefijo porque el banco le agrega el nombre de la cuenta al final.
+     */
+    private val NOISE_PREFIX = listOf(
+        "tu cuenta", "su cuenta", "mi cuenta", "tu tarjeta", "su tarjeta",
+        "tarjeta de credito", "tarjeta de debito", "cuenta corriente", "cuenta rut",
+        "cuenta de ahorro", "linea de credito", "tu compra",
+    )
+
     fun find(text: String): String? {
         val clean = text.replace('\u00A0', ' ')
         LABELED.find(clean)?.groupValues?.get(1)?.let { return clean(it) }
@@ -79,6 +90,7 @@ object MerchantExtractor {
         if (value.none { it.isLetter() }) return null
         val normalized = TextNorm.plain(value)
         if (normalized in NOISE) return null
+        if (NOISE_PREFIX.any { normalized == it || normalized.startsWith("$it ") }) return null
         if (normalized.length < 2) return null
         return value
     }

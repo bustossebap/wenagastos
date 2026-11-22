@@ -32,20 +32,33 @@ object MailSource {
         Sender("banco falabella", BankSource.BANCO_FALABELLA),
         Sender("bancofalabella", BankSource.BANCO_FALABELLA),
         Sender("bancofalabella.cl", BankSource.BANCO_FALABELLA),
+        // MACH (BCI) avisa la transferencia a quien la recibe. Se compara con el texto completo
+        // ("machbank" y no "mach") porque "machine", "machala" y parecidos empiezan igual.
+        Sender("machbank", BankSource.MACH),
+        Sender("machbank.cl", BankSource.MACH),
     )
 
     /** Banco al que pertenece el correo, o `null` si el remitente no está en la lista. */
     fun of(text: String): BankSource? {
         val plain = TextNorm.plain(text)
         if (plain.isEmpty()) return null
-        return senders.firstOrNull { plain.contains(it.name) }?.source
+        // Gana el remitente que aparece primero: en el cuerpo, un correo de MACH nombra
+        // "Banco Falabella" como banco destino, y eso no lo vuelve un correo del Falabella.
+        return senders
+            .mapNotNull { sender ->
+                plain.indexOf(sender.name).takeIf { it >= 0 }?.let { at -> at to sender.source }
+            }
+            .minByOrNull { it.first }
+            ?.second
     }
 
     /**
-     * Banco de una notificación de Gmail. Mira todo lo que trae (el remitente va en el título)
-     * porque un contacto guardado puede cambiar el nombre visible y dejar el dominio en el cuerpo.
+     * Banco de una notificación de Gmail. Mira primero el título (ahí va el remitente) y recién
+     * después el cuerpo, porque un contacto guardado puede cambiar el nombre visible y dejar el
+     * dominio más abajo.
      */
-    fun of(raw: RawNotification): BankSource? = of(
-        listOfNotNull(raw.title, raw.text, raw.bigText, raw.subText).joinToString(" "),
-    )
+    fun of(raw: RawNotification): BankSource? {
+        of(listOfNotNull(raw.title, raw.subText).joinToString(" "))?.let { return it }
+        return of(listOfNotNull(raw.text, raw.bigText, raw.textLines).joinToString(" "))
+    }
 }

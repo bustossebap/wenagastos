@@ -27,8 +27,10 @@ import kotlinx.coroutines.sync.withLock
  * - Si hay monto, comercio, sentido y cuenta identificados → movimiento CONFIRMADO (suma en los totales).
  * - Si algo falta → queda PENDING ("Por revisar") con el motivo anotado, así no se pierde la plata
  *   pero tampoco ensucia los totales.
- * - Si ya existe el mismo gasto (±5 min) → se descarta, salvo que llegue primero Google Wallet
- *   y después el banco: en ese caso se completa el movimiento existente con los datos del banco.
+ * - Si ya existe el mismo movimiento (±5 min) → se descarta, salvo que al que ya está le falte el
+ *   nombre y este aviso sí lo traiga: ahí se completa la fila existente en vez de anotar dos veces
+ *   (el push del banco que solo dice "te transfirieron $12.000" + el correo de la contraparte que
+ *   dice quién fue). También se completa Wallet → banco, que es el mismo caso con otra fuente.
  * - Un traspaso entre cuentas propias se registra con `isTransfer`: no suma en gastos ni ingresos,
  *   porque la plata no se gastó, solo cambió de cuenta.
  * - La categoría sale de la regla que el usuario enseñó para ese comercio (Fase 3) y, si no hay,
@@ -80,7 +82,7 @@ class CaptureEngine(
 
         val choice = resolveAccount(parsed)
         if (choice == null) {
-            log(raw, source, CaptureOutcome.REJECTED, "No hay cuentas activas para asignar el movimiento")
+            log(raw, source, CaptureOutcome.REJECTED, accountFailure(parsed))
             return CaptureOutcome.REJECTED
         }
 
@@ -92,16 +94,17 @@ class CaptureEngine(
             return CaptureOutcome.DUPLICATE
         }
 
-        val existing = transactions.findNearby(parsed.amount, parsed.direction, parsed.occurredAt)
         val status = if (parsed.isConfident && !choice.isPlaceholder) {
             TransactionStatus.CONFIRMED
         } else {
             TransactionStatus.PENDING
         }
         val notes = buildNotes(parsed, choice)
+        val nearby = findExisting(parsed)
 
-        if (existing != null) {
-            if (!isUpgradeable(existing, source)) {
+        if (nearby != null) {
+            val merged = merge(nearby, parsed, choice, categoryId, notes, hash)
+            if (merged == null) {
                 log(
                     raw,
                     source,
@@ -110,26 +113,8 @@ class CaptureEngine(
                 )
                 return CaptureOutcome.DUPLICATE
             }
-            transactions.save(
-                existing.copy(
-                    accountId = choice.account.id,
-                    categoryId = existing.categoryId ?: categoryId,
-                    isTransfer = parsed.isTransfer,
-                    merchantRaw = parsed.merchant,
-                    merchantNorm = parsed.merchant.lowercase(),
-                    notes = notes,
-                    status = status,
-                    source = TransactionSource.NOTIFICATION,
-                    rawText = parsed.rawText,
-                    dedupeHash = hash,
-                ),
-            )
-            log(
-                raw,
-                source,
-                CaptureOutcome.MERGED,
-                "Completé el movimiento que había quedado de Google Wallet",
-            )
+            transactions.save(merged)
+            log(raw, source, CaptureOutcome.MERGED, mergeDetail(nearby, parsed, source))
             return CaptureOutcome.MERGED
         }
 
@@ -185,9 +170,99 @@ class CaptureEngine(
         transactions.linkTransfer(leg, counterpart)
     }
 
-    /** Google Wallet (prioridad 1) se puede completar con el aviso del banco (prioridad 3). */
-    private fun isUpgradeable(existing: TransactionEntity, source: BankSource): Boolean =
-        existing.source == TransactionSource.WALLET && source.priority > BankSource.WALLET.priority
+    /**
+     * El movimiento que ya cuenta este mismo evento.
+     *
+     * Primero la ventana de ±5 minutos de siempre. Si no hay nada, una ventana ancha (±30) que
+     * solo se acepta cuando a alguno de los dos avisos le falta el nombre: el correo de la
+     * contraparte puede demorar unos minutos en publicarse, pero dos compras iguales del mismo
+     * monto en la misma media hora tienen que quedar como dos movimientos.
+     */
+    private suspend fun findExisting(parsed: ParsedNotification): TransactionEntity? {
+        transactions.findNearby(parsed.amount, parsed.direction, parsed.occurredAt)
+            ?.let { return it }
+        val nameless = !parsed.merchantFound || MerchantQuality.isGeneric(parsed.merchant)
+        return transactions.findNearby(
+            parsed.amount,
+            parsed.direction,
+            parsed.occurredAt,
+            COMPLEMENT_WINDOW,
+        )?.takeIf { nameless || MerchantQuality.isGeneric(it.merchantRaw) }
+    }
+
+    /**
+     * Decide si el aviso que llega completa el que ya está anotado y devuelve la fila lista
+     * para guardar; `null` cuando el que ya estaba es el bueno y el nuevo sobra.
+     *
+     * Se completa solo cuando no se pierde nada: el que estaba venía de Google Wallet (la compra
+     * sin tarjeta) o le faltaba el nombre. Al revés —el que estaba tiene nombre y el que llega,
+     * no— el nuevo se descarta: son el mismo evento y el dato bueno ya está guardado.
+     *
+     * La cuenta sale del aviso del banco que la tiene: el correo de la contraparte nombra la
+     * cuenta propia que recibió la plata, así que no puede mover el movimiento de cuenta.
+     */
+    private fun merge(
+        existing: TransactionEntity,
+        parsed: ParsedNotification,
+        choice: AccountChoice,
+        categoryId: Long?,
+        notes: String?,
+        hash: String,
+    ): TransactionEntity? {
+        val fromWallet = existing.source == TransactionSource.WALLET &&
+            parsed.source.priority > BankSource.WALLET.priority
+        val nameWasMissing = MerchantQuality.isGeneric(existing.merchantRaw)
+        val nameArrived = parsed.merchantFound && !MerchantQuality.isGeneric(parsed.merchant)
+        if (!fromWallet && !(nameWasMissing && nameArrived)) return null
+
+        // El nombre es del aviso que sí lo trae; la cuenta y la fecha, del que llegó primero.
+        val takeName = nameWasMissing && nameArrived
+        val merchant = if (takeName) parsed.merchant else existing.merchantRaw
+        val isTransfer = existing.isTransfer || parsed.isTransfer
+        // Con nombre y una cuenta identificada no queda nada por revisar.
+        val confirmed = !choice.isPlaceholder && !MerchantQuality.isGeneric(merchant)
+
+        return existing.copy(
+            accountId = if (parsed.isCounterpart) existing.accountId else choice.account.id,
+            categoryId = existing.categoryId ?: categoryId,
+            isTransfer = isTransfer,
+            isExpense = existing.isExpense && !isTransfer,
+            merchantRaw = merchant,
+            merchantNorm = merchant.lowercase(),
+            notes = if (confirmed) null else existing.notes ?: notes,
+            status = if (confirmed) TransactionStatus.CONFIRMED else existing.status,
+            source = TransactionSource.NOTIFICATION,
+            rawText = if (takeName) parsed.rawText else existing.rawText,
+            dedupeHash = hash,
+        )
+    }
+
+    /** Qué se hizo con el movimiento que ya estaba, para el registro de captura. */
+    private fun mergeDetail(
+        existing: TransactionEntity,
+        parsed: ParsedNotification,
+        source: BankSource,
+    ): String = when {
+        existing.source == TransactionSource.WALLET ->
+            "Completé el movimiento que había quedado de Google Wallet"
+
+        parsed.isCounterpart ->
+            "Completé el nombre con el aviso de ${source.label}: ${parsed.merchant}"
+
+        else -> "Completé el movimiento que estaba por revisar con el aviso de ${source.label}"
+    }
+
+    /** Motivo por el que no hay cuenta donde anotar el movimiento. */
+    private fun accountFailure(parsed: ParsedNotification): String {
+        val last4 = parsed.last4
+        // El correo de la contraparte trae el número de la cuenta que recibió: si no existe,
+        // elegir "la primera" dejaría la plata en el bolsillo equivocado.
+        return if (parsed.isCounterpart && last4 != null) {
+            "La cuenta *$last4 no está configurada"
+        } else {
+            "No hay cuentas activas para asignar el movimiento"
+        }
+    }
 
     private suspend fun resolveAccount(parsed: ParsedNotification): AccountChoice? {
         val active = accounts.listActive()
@@ -196,29 +271,42 @@ class CaptureEngine(
         val last4 = parsed.last4
         if (last4 != null) {
             accounts.findByLast4(last4)?.let { return AccountChoice(it, isPlaceholder = false) }
+            // El aviso de la contraparte solo sirve para completar: si esa cuenta no está
+            // configurada, no hay dónde anotar la plata (elegir "la primera" sería otro banco).
+            if (parsed.isCounterpart) return null
         }
 
         val institution = parsed.source.institution
-        val candidates = if (institution == null) {
+        val ofBank = if (institution == null) {
             emptyList()
         } else {
             active.filter { it.institution == institution }
         }
+        if (ofBank.isEmpty()) return fallbackAccount(active, parsed)
 
-        if (candidates.isNotEmpty()) {
-            val preferredKind = if (parsed.cardIsCredit) AccountKind.CREDIT else null
-            val chosen = candidates.firstOrNull { it.kind == preferredKind } ?: candidates.first()
-            // Con una sola cuenta en ese banco no hay dónde equivocarse, así que pedir que se
-            // asigne el número sería fricción sin ganancia. Con dos o más, el número desambigua.
-            val ambiguous = last4 != null && candidates.size > 1
-            return AccountChoice(
-                account = chosen,
-                isPlaceholder = ambiguous,
-                reason = if (ambiguous) "Asigna el número *$last4 a una cuenta" else null,
-            )
-        }
-
+        // Una tarjeta de crédito es otra cuenta: el aviso de un consumo con débito no se anota
+        // en la CMR solo porque llegó primero en la lista.
+        val sameFamily = ofBank.filter { (it.kind == AccountKind.CREDIT) == parsed.cardIsCredit }
+        val family = if (sameFamily.isNotEmpty()) sameFamily else ofBank
+        // Con una sola cuenta en ese banco no hay dónde equivocarse, así que pedir el número
+        // sería fricción sin ganancia. Con dos o más, el número que trajo el aviso desambigua.
+        val ambiguous = last4 != null && family.size > 1
         return AccountChoice(
+            account = family.first(),
+            isPlaceholder = ambiguous,
+            reason = if (ambiguous) ambiguousReason(last4) else null,
+        )
+    }
+
+    private fun ambiguousReason(last4: String?): String = if (last4 != null) {
+        "Asigna el número *$last4 a una cuenta"
+    } else {
+        "Asigna el número de la cuenta"
+    }
+
+    /** Sin banco reconocible no hay a qué institución apuntar: queda "Por revisar". */
+    private fun fallbackAccount(active: List<AccountEntity>, parsed: ParsedNotification) =
+        AccountChoice(
             account = active.first(),
             isPlaceholder = true,
             reason = if (parsed.direction == Direction.DEBIT) {
@@ -227,7 +315,6 @@ class CaptureEngine(
                 "No supe en qué cuenta entró la plata"
             },
         )
-    }
 
     private suspend fun resolveCategoryId(parsed: ParsedNotification): Long? {
         val active = categories.listActive()
@@ -305,5 +392,8 @@ class CaptureEngine(
 
     private companion object {
         const val FIVE_MINUTES = 5 * 60_000L
+
+        /** Ventana para juntar dos avisos del mismo evento cuando a uno le falta el nombre. */
+        const val COMPLEMENT_WINDOW = 30 * 60_000L
     }
 }

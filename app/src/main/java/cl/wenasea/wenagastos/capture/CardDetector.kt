@@ -32,12 +32,25 @@ object CardDetector {
     /** Un número de cuenta chileno tiene 8 o más dígitos; menos que eso es un monto o un folio. */
     private const val MIN_ACCOUNT_DIGITS = 8
 
+    /**
+     * Número abreviado que el banco publica sin decir "terminada en": Banco Falabella avisa
+     * "Te transfirieron $12.000 a tu Cuenta Banco Falabella 8777". Se exige la palabra "cuenta"
+     * antes, que el número no venga pegado a otros dígitos y que no sea parte de un monto
+     * ("1.234"): el punto de fin de frase sí vale.
+     */
+    private val SHORT_ACCOUNT = Regex(
+        """\bcuentas?\b[^\d$]{0,30}?(?<!\d)(\d{4})(?!\.?\d)""",
+        RegexOption.IGNORE_CASE,
+    )
+
     fun last4(text: String): String? {
         LAST4_PATTERNS.forEach { pattern ->
             val match = pattern.find(text) ?: return@forEach
             return match.groupValues[1]
         }
-        return accountLast4(text)
+        // El número completo manda sobre el abreviado: dice lo mismo y sin adivinar.
+        accountLast4(text)?.let { return it }
+        return SHORT_ACCOUNT.find(text)?.groupValues?.get(1)
     }
 
     /** Últimos 4 dígitos del número de cuenta, si el aviso lo trae completo. */

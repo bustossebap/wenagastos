@@ -49,6 +49,15 @@ enum class BankSource(
         institution = Institution.OTHER,
         priority = 3,
     ),
+    // MACH (BCI) no tiene app instalada en el teléfono: avisa por correo, y ese correo es la
+    // única fuente que dice **quién** envió la plata cuando el banco que la recibe solo publica
+    // el número de cuenta. No tiene paquetes a propósito: solo se llega por `MailSource`.
+    MACH(
+        label = "MACH",
+        packages = emptySet(),
+        institution = Institution.OTHER,
+        priority = 2,
+    ),
     WALLET(
         label = "Google Wallet",
         packages = setOf("com.google.android.apps.walletnfcrel"),

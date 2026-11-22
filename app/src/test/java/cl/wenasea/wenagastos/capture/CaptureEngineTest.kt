@@ -662,6 +662,132 @@ class CaptureEngineTest {
         }
     }
 
+    @Test
+    fun `el push sin nombre se completa con el correo de MACH`() {
+        runBlocking {
+            val falabellaCtaCte = accounts.seed(
+                AccountEntity(
+                    name = "Falabella Cta. Cte.",
+                    institution = Institution.FALABELLA,
+                    kind = AccountKind.CHECKING,
+                    accountLast4 = "8777",
+                    colorHex = "#7CB342",
+                ),
+            ).single()
+
+            // 1) El push del banco donde está la cuenta: dice cuánto y dónde, pero no quién.
+            assertEquals(CaptureOutcome.PENDING, engine.handle(pushFalabella()))
+
+            val pendiente = txDao.stored.single()
+            assertEquals(falabellaCtaCte, pendiente.accountId)
+            assertEquals(TransactionStatus.PENDING, pendiente.status)
+            assertEquals("Transferencia recibida", pendiente.merchantRaw)
+            assertEquals("No pude leer el comercio. Revisa y confirma.", pendiente.notes)
+
+            // 2) El correo de MACH cuenta el mismo evento y sí dice quién transfirió.
+            assertEquals(CaptureOutcome.MERGED, engine.handle(correoMach()))
+
+            val merged = txDao.stored.single()
+            assertEquals(12_000L, merged.amount)
+            assertEquals(Direction.CREDIT, merged.direction)
+            assertEquals(falabellaCtaCte, merged.accountId)
+            assertEquals("Nicolás Andrés Bustos Ponce", merged.merchantRaw)
+            assertEquals(TransactionStatus.CONFIRMED, merged.status)
+            assertNull(merged.notes)
+            assertEquals(otrosIngresosId, merged.categoryId)
+            assertFalse(merged.isExpense)
+            // La fecha es la del aviso que llegó primero: el push.
+            assertEquals(pushAt, merged.occurredAt)
+            assertEquals(
+                "Completé el nombre con el aviso de MACH: Nicolás Andrés Bustos Ponce",
+                logDao.stored.last().detail,
+            )
+        }
+    }
+
+    @Test
+    fun `si el correo de MACH llega primero el push repetido no pisa el nombre`() {
+        runBlocking {
+            val falabellaCtaCte = accounts.seed(
+                AccountEntity(
+                    name = "Falabella Cta. Cte.",
+                    institution = Institution.FALABELLA,
+                    kind = AccountKind.CHECKING,
+                    accountLast4 = "8777",
+                    colorHex = "#7CB342",
+                ),
+            ).single()
+
+            assertEquals(CaptureOutcome.SAVED, engine.handle(correoMach()))
+            assertEquals(CaptureOutcome.DUPLICATE, engine.handle(pushFalabella()))
+
+            val row = txDao.stored.single()
+            assertEquals(falabellaCtaCte, row.accountId)
+            assertEquals("Nicolás Andrés Bustos Ponce", row.merchantRaw)
+            assertEquals(TransactionStatus.CONFIRMED, row.status)
+            assertNull(row.notes)
+        }
+    }
+
+    @Test
+    fun `el correo de MACH no se anota en una cuenta de otro banco`() {
+        runBlocking {
+            // Sin la cuenta *8777 configurada no hay dónde anotar la plata: caer en "la primera"
+            // cuenta (Santander) la dejaría en el banco equivocado.
+            assertEquals(CaptureOutcome.REJECTED, engine.handle(correoMach()))
+
+            assertTrue(txDao.stored.isEmpty())
+            assertEquals("La cuenta *8777 no está configurada", logDao.stored.last().detail)
+        }
+    }
+
+    /** Hora del push de Banco Falabella (21-11-2026 19:53:08). */
+    private val pushAt: Long = LocalDateTime.of(2026, 11, 21, 19, 53, 8)
+        .atZone(Dates.zone)
+        .toInstant()
+        .toEpochMilli()
+
+    /** Push real de Banco Falabella: dice cuánto entró y en qué cuenta, pero no quién lo mandó. */
+    private fun pushFalabella(): RawNotification = RawNotification(
+        packageName = BANCO_FALABELLA,
+        title = "Recibiste ${'$'}12.000",
+        text = "Te transfirieron ${'$'}12.000 a tu Cuenta Banco Falabella 8777. " +
+            "¡Ingresa a la App y revisa tus movimientos!",
+        postedAt = pushAt,
+        key = "0|$BANCO_FALABELLA|0|FCM-Notification:5760826|10092",
+    )
+
+    /** Correo real de MACHBANK: el único lado que dice el nombre de quien transfirió. */
+    private fun correoMach(): RawNotification = RawNotification(
+        packageName = MailSource.PACKAGE,
+        title = "MACHBANK",
+        text = "Recibiste una transferencia de Nicolás Andrés Bustos Ponce",
+        bigText = """
+            Recibiste una transferencia de Nicolás Andrés Bustos Ponce
+
+            Recibiste una transferencia
+            Hola Sebastian. Acabas de recibir una transferencia de Nicolás Andrés Bustos Ponce sin costo desde MACHBANK.
+            Detalle
+            Fecha
+            21/11/2026 - 19:52:59
+            Nombre destinatario
+            Sebastian Ignacio Bustos
+            ID
+            19.526.470-8
+            Banco destino
+            Banco Falabella
+            Cuenta destino
+            19834048777
+            Monto
+            ${'$'}12.000
+            Código de confirmación
+            391501572352
+        """.trimIndent(),
+        // Gmail publicó el correo 7 segundos antes del push.
+        postedAt = pushAt - 7_000,
+        key = "0|${MailSource.PACKAGE}|2|^sq_ig_i_personal|1",
+    )
+
     /** Hora del movimiento, sacada del propio correo (no la de llegada de la notificación). */
     private val correoAt: Long = LocalDateTime.of(2026, 11, 21, 16, 27)
         .atZone(Dates.zone)

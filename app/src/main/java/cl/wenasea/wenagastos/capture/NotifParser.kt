@@ -17,6 +17,12 @@ data class ParsedNotification(
     val rawText: String,
     /** Traspaso entre cuentas propias: la plata no se gastó, solo cambió de cuenta. */
     val isTransfer: Boolean = false,
+    /**
+     * El aviso viene del banco de la contraparte (MACH avisando a una cuenta Falabella): nombra
+     * la cuenta propia que recibió la plata, pero no es la cuenta del usuario en ese banco. Solo
+     * sirve para completar un movimiento ya anotado; nunca crea uno con esa cuenta.
+     */
+    val isCounterpart: Boolean = false,
 ) {
     /** Confianza suficiente para registrar el movimiento como confirmado. */
     val isConfident: Boolean get() = amount > 0 && (merchantFound || isTransfer)
@@ -115,6 +121,10 @@ object NotifParser {
      */
     private fun fallbackMerchant(raw: RawNotification, source: BankSource): Fallback {
         val candidate = raw.title.trim()
+        // "Recibiste $12.000": el título solo repite el monto, así que no hay comercio que leer.
+        if (RECEIPT_TITLE.matches(TextNorm.plain(candidate))) {
+            return Fallback("Transferencia recibida", isMerchant = false)
+        }
         val looksLikeName = candidate.length in 2..40 && candidate.any { it.isLetter() }
         val isAppName = TextNorm.plain(candidate) in APP_NAMES || candidate == source.label
 
@@ -123,6 +133,13 @@ object NotifParser {
             else -> Fallback("Movimiento ${source.label}", isMerchant = false)
         }
     }
+
+    /** Título que solo dice cuánto entró ("Recibiste $12.000", "$ 12.000 transferidos"). */
+    private val RECEIPT_TITLE = Regex(
+        """^(?:(?:recibiste|recibimos|te\s+transfirieron|te\s+transfirio|transferencia)\s+)?""" +
+            """\$?\s*[\d.,]+\s*(?:recibidos?|transferidos?)?$""",
+        RegexOption.IGNORE_CASE,
+    )
 
     private val APP_NAMES = setOf(
         "google wallet",
