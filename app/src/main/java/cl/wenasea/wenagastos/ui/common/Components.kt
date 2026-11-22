@@ -29,13 +29,16 @@ import androidx.compose.ui.unit.sp
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.theme.Wena
 import java.time.YearMonth
 
 fun String.asColor(): Color = Color(android.graphics.Color.parseColor(this))
 
 @Composable
-fun amountColor(direction: Direction): Color =
-    if (direction == Direction.DEBIT) MaterialTheme.colorScheme.error else Color(0xFF2E9E6B)
+fun amountColor(direction: Direction): Color {
+    val paleta = Wena.paleta
+    return if (direction == Direction.DEBIT) paleta.cargo else paleta.abono
+}
 
 @Composable
 fun MonthSwitcher(

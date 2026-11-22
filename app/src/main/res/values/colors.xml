@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="splash_background">#FF101A1E</color>
-    <color name="ic_launcher_background">#FF0F766E</color>
+    <!-- Crema del manual (p. 13): la ventana arranca en papel para que el arranque no
+         parpadee a oscuro. En modo noche lo sobreescribe values-night/colors.xml. -->
+    <color name="splash_background">#FFF3F0DD</color>
+    <color name="ic_launcher_background">#FF383A5B</color>
 </resources>

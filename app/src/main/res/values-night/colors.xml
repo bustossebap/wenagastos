@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Noche (#1C1E30), el fondo del modo oscuro, para que el arranque no destelle en crema. -->
+    <color name="splash_background">#FF1C1E30</color>
+</resources>
