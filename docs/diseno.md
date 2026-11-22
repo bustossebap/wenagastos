@@ -77,9 +77,10 @@ cambiar de tema:
 | `tertiary` | salvia entintada | salvia | abono, "Ingresos" en el gráfico |
 | `error` | terracota entintada | terracota | error, presupuesto excedido |
 
-> Pendiente para la etapa de componentes: el semáforo de presupuesto usa `primary/tertiary/error`,
-> y con estos papeles "cerca del tope" queda verde en vez de ámbar. Necesita tokens propios
-> (`Wena.paleta`), no roles M3.
+> El semáforo de presupuesto **no** usa `primary/tertiary/error`: con esos papeles "cerca del tope"
+> quedaba verde y el aviso no avisaba. Tiene tres tokens propios en `Wena.paleta` —
+> `presupuestoOk` (salvia), `presupuestoCerca` (trigo) y `presupuestoExcedido` (terracota) — que de
+> día son las variantes entintadas y de noche los acentos puros. `budgetColor()` los lee de ahí.
 
 ### Reglas de uso
 
@@ -176,15 +177,17 @@ papeles, área de resguardo).
 | `ui/theme/Shape.kt` | escala de radios |
 | `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca |
 | `ui/common/HeroBlock.kt` | bloque del héroe y `TornTopEdge` (borde rasgado) |
-| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow` |
+| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `EmptyState` |
+| `ui/common/BudgetComponents.kt` | semáforo de presupuesto: `budgetColor()` desde `Wena.paleta` y `BudgetProgress` |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
 | `res/values-night/colors.xml` | arranque en noche |
 | `res/font/` | Instrument Sans 400/600/700, VG5000 |
 | `assets/licenses/` | OFL de las dos fuentes |
 
 `Wena.paleta` es la puerta para lo que el `ColorScheme` de Material 3 no puede expresar: los seis
-acentos del manual, los dos colores de dinero resueltos por modo (`abono`, `cargo`) y los tres del
-héroe (`heroFondo`, `heroTexto`, `heroCifra`).
+acentos del manual, los dos colores de dinero resueltos por modo (`abono`, `cargo`), los tres del
+héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
+(`presupuestoOk`, `presupuestoCerca`, `presupuestoExcedido`).
 
 ---
 
@@ -194,17 +197,20 @@ héroe (`heroFondo`, `heroTexto`, `heroCifra`).
 |---|---|---|
 | 0 | Fichas, paleta, contrastes | ✅ este documento |
 | 1 | Tokens: color, tipografía, formas, fuentes, arranque | ✅ |
-| 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | 🔶 barra y FAB hechos; componentes comunes, pendientes |
+| 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | ✅ |
 | 3 | Inicio: héroe con borde rasgado y monto en VG5000 | ✅ |
-| 4 | Reportes: barras-tecla y paleta de acento | pendiente |
+| 4 | Reportes: barras-tecla y paleta de acento | 🔶 héroe, barras-tecla, leyenda y semáforo hechos; dona y lista de categorías, pendientes |
 | 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | pendiente |
 | 6 | Auditoría de contraste en dispositivo + capturas antes/después | pendiente |
 
 ## 7. Pendientes conocidos
 
-- **Avatares de categoría:** usan `color.copy(alpha = 0.18f)` sobre el color que elige el usuario.
-  Sobre crema el tinte queda muy pálido y hay colores de categoría que no contrastan con el emoji
-  encima. Etapa 2 o 5.
+- **Avatares de categoría:** resuelto en la etapa 2 — tecla cuadrada con tinte al 22 % y borde al
+  55 % del color elegido, que sobre crema sí define la forma. Queda por revisar, si algún color de
+  usuario es muy claro, el emoji encima (etapa 6, auditoría en dispositivo).
+- **Dona de Reportes:** sigue siendo un anillo curvo con los colores de categoría. Es la única curva
+  grande que queda en la app y el manual no tiene curvas; en la etapa 4 hay que decidir si se
+  reemplaza por una barra-tecla apilada o se deja como la excepción declarada.
 - **Logotipo de Wenagastos:** no existe. Idea anotada, no comprometida: un glifo de barras que se
   lea a la vez como teclas de piano y como barras de gráfico.
 - **Icono de la app:** hoy son barras blancas sobre teal (`#0F766E`); el fondo ya pasó a marino,

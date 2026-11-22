@@ -8,11 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -112,6 +112,11 @@ fun SectionHeader(
     }
 }
 
+/**
+ * Avatar de categoría: tecla cuadrada de papel con el color del usuario en el tinte y en el borde.
+ * No es un círculo —el manual no tiene curvas— y el borde de 1 dp define la forma sobre crema,
+ * donde un tinte al 18 % se perdía. El emoji va encima del tinte, que es relleno, no texto.
+ */
 @Composable
 fun CategoryAvatar(
     emoji: String,
@@ -119,36 +124,43 @@ fun CategoryAvatar(
     modifier: Modifier = Modifier,
     size: Int = 40,
 ) {
+    val shape = MaterialTheme.shapes.small
     Box(
         modifier = modifier
             .size(size.dp)
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.18f)),
+            .clip(shape)
+            .background(color.copy(alpha = 0.22f))
+            .border(1.dp, color.copy(alpha = 0.55f), shape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text = emoji, fontSize = (size * 0.45f).sp)
+        Text(text = emoji, fontSize = (size * 0.48f).sp)
     }
 }
 
+/**
+ * Barra de reparto dibujada como tecla: canto recto, borde de 1 dp en vez de sombra y 8 dp de
+ * alto para que la tecla se lea. La usan "En qué se fue la plata" y los presupuestos.
+ */
 @Composable
 fun ShareBar(
     share: Float,
     color: Color,
     modifier: Modifier = Modifier,
 ) {
+    val shape = RoundedCornerShape(2.dp)
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(6.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .height(8.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
     ) {
         if (share > 0f) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(share.coerceIn(0.02f, 1f))
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
+                    .fillMaxHeight()
                     .background(color),
             )
         }

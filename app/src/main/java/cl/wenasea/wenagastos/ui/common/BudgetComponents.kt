@@ -1,20 +1,27 @@
 package cl.wenasea.wenagastos.ui.common
 
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import cl.wenasea.wenagastos.domain.BudgetLevel
 import cl.wenasea.wenagastos.domain.BudgetStatus
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.theme.Wena
 import kotlin.math.roundToInt
 
-/** Verde/ámbar/rojo según qué tan cerca está el presupuesto. */
+/**
+ * Verde, ámbar o rojo según qué tan cerca está el presupuesto. Sale de `Wena.paleta` y no de los
+ * roles M3: `primary` es la marca y `tertiary` es el abono, así que "cerca del tope" salía verde.
+ * Las tres variantes pasan AA como texto sobre la tarjeta en su modo.
+ */
 @Composable
-fun budgetColor(level: BudgetLevel): Color = when (level) {
-    BudgetLevel.OK -> MaterialTheme.colorScheme.primary
-    BudgetLevel.NEAR -> MaterialTheme.colorScheme.tertiary
-    BudgetLevel.OVER -> MaterialTheme.colorScheme.error
+fun budgetColor(level: BudgetLevel): Color {
+    val paleta = Wena.paleta
+    return when (level) {
+        BudgetLevel.OK -> paleta.presupuestoOk
+        BudgetLevel.NEAR -> paleta.presupuestoCerca
+        BudgetLevel.OVER -> paleta.presupuestoExcedido
+    }
 }
 
 /** Barra del presupuesto: se llena hasta el 100 % y cambia de color al acercarse al límite. */

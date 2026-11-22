@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -31,6 +29,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.MonthPoint
+import cl.wenasea.wenagastos.ui.theme.Wena
 import java.time.YearMonth
 import kotlin.math.max
 
@@ -92,8 +91,12 @@ fun CategoryDonut(
 }
 
 /**
- * Gastos (teal) e ingresos (ámbar) de los últimos meses. Tocar un mes lo abre en el reporte.
- * La barra más alta del período es la que define la escala.
+ * Gastos e ingresos de los últimos meses como teclas: barras rectas de altura distinta, separación
+ * fina y una regla de base compartida, como el módulo gráfico del manual. Tocar un mes lo abre en
+ * el reporte.
+ *
+ * Los colores son los del dinero (`cargo`/`abono`), los mismos que firman los montos en las filas:
+ * el reporte no inventa una paleta propia. La barra más alta del período define la escala.
  */
 @Composable
 fun MonthlyBars(
@@ -102,21 +105,29 @@ fun MonthlyBars(
     onSelect: (YearMonth) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val expenseColor = MaterialTheme.colorScheme.primary
-    val incomeColor = MaterialTheme.colorScheme.tertiary
+    val paleta = Wena.paleta
+    val regla = MaterialTheme.colorScheme.outlineVariant
     if (points.isEmpty()) return
 
     Column(modifier = modifier.fillMaxWidth()) {
         Canvas(modifier = Modifier.fillMaxWidth().height(132.dp)) {
             val slot = size.width / points.size
-            val bar = slot * 0.24f
-            val gap = slot * 0.06f
-            val top = max(points.maxOf { it.expenses }, points.maxOf { it.income }).coerceAtLeast(1L)
+            val bar = slot * 0.22f
+            val gap = 3.dp.toPx()
+            val linea = 1.dp.toPx()
+            val pie = size.height - linea
+            val escala = max(points.maxOf { it.expenses }, points.maxOf { it.income })
+                .coerceAtLeast(1L)
             points.forEachIndexed { index, point ->
                 val left = slot * index + slot / 2f - bar - gap / 2f
-                drawBar(expenseColor, point.expenses, top, left, bar)
-                drawBar(incomeColor, point.income, top, left + bar + gap, bar)
+                drawKey(paleta.cargo, point.expenses, escala, left, bar, pie)
+                drawKey(paleta.abono, point.income, escala, left + bar + gap, bar, pie)
             }
+            drawRect(
+                color = regla,
+                topLeft = Offset(0f, pie),
+                size = Size(size.width, linea),
+            )
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth()) {
@@ -140,13 +151,13 @@ fun MonthlyBars(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(3.dp))
+                    // La tecla pisada del mes abierto: un rectángulo corto, no un pill.
                     Box(
                         modifier = Modifier
-                            .width(if (isSelected) 10.dp else 0.dp)
+                            .width(if (isSelected) 14.dp else 0.dp)
                             .height(3.dp)
-                            .clip(RoundedCornerShape(2.dp))
-                            .background(if (isSelected) expenseColor else Color.Transparent),
+                            .background(if (isSelected) paleta.cargo else Color.Transparent),
                     )
                 }
             }
@@ -155,24 +166,24 @@ fun MonthlyBars(
 }
 
 /**
- * Una barra redondeada desde la base. Las cantidades chicas quedan con un mínimo visible para que
- * un gasto de $1.000 no desaparezca al lado de un mes de $900.000.
+ * Una tecla desde la regla de base: rectángulo recto, sin radio. Las cantidades chicas quedan con
+ * un mínimo visible para que un gasto de $1.000 no desaparezca al lado de un mes de $900.000.
  */
-private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawBar(
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawKey(
     color: Color,
     value: Long,
     max: Long,
     left: Float,
     width: Float,
+    baseline: Float,
 ) {
     if (value <= 0L) return
-    val height = (value.toFloat() / max * size.height).coerceAtLeast(2.dp.toPx())
-        .coerceAtMost(size.height)
-    val radius = CornerRadius(width / 2f, width / 2f)
-    drawRoundRect(
+    val height = (value.toFloat() / max * baseline)
+        .coerceAtLeast(3.dp.toPx())
+        .coerceAtMost(baseline)
+    drawRect(
         color = color,
-        topLeft = Offset(left, size.height - height),
+        topLeft = Offset(left, baseline - height),
         size = Size(width, height),
-        cornerRadius = radius,
     )
 }

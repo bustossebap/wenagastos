@@ -15,12 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -51,6 +49,7 @@ import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.domain.Reports
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
+import cl.wenasea.wenagastos.ui.common.HeroBlock
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.MonthSwitcher
 import cl.wenasea.wenagastos.ui.common.SectionHeader
@@ -62,6 +61,7 @@ import cl.wenasea.wenagastos.ui.common.budgetColor
 import cl.wenasea.wenagastos.ui.common.budgetOfLabel
 import cl.wenasea.wenagastos.ui.common.budgetPercentLabel
 import cl.wenasea.wenagastos.ui.common.budgetRemainingLabel
+import cl.wenasea.wenagastos.ui.theme.Wena
 import java.time.YearMonth
 import kotlin.math.roundToInt
 
@@ -111,7 +111,17 @@ fun ReportsScreen(
             )
         }
 
-        item { ReportsSummaryCard(state) }
+        item {
+            HeroBlock(
+                label = "Gastos del mes",
+                amount = Money.format(state.expenses),
+                stats = listOf(
+                    "Ingresos" to Money.format(state.income),
+                    "Balance" to Money.format(state.balance),
+                    "Promedio diario" to Money.format(state.dailyAverage),
+                ),
+            )
+        }
 
         item {
             CategoriesCard(
@@ -153,65 +163,6 @@ fun ReportsScreen(
     }
 }
 
-
-@Composable
-private fun ReportsSummaryCard(state: ReportsUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                text = "Gastos del mes",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Text(
-                text = Money.format(state.expenses),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth()) {
-                ReportStat(
-                    label = "Ingresos",
-                    value = Money.format(state.income),
-                    modifier = Modifier.weight(1f),
-                )
-                ReportStat(
-                    label = "Balance",
-                    value = Money.format(state.balance),
-                    modifier = Modifier.weight(1f),
-                )
-                ReportStat(
-                    label = "Promedio diario",
-                    value = Money.format(state.dailyAverage),
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportStat(label: String, value: String, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
-        )
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-        )
-    }
-}
 
 /** Dona + leyenda + detalle: tocar una categoría abre sus movimientos del mes. */
 @Composable
@@ -289,7 +240,7 @@ private fun DonutLegendRow(total: CategoryTotal) {
         Box(
             modifier = Modifier
                 .size(8.dp)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(1.dp))
                 .background(color),
         )
         Text(
@@ -401,13 +352,14 @@ private const val DETAIL_LIMIT = 6
 /** Barras de los últimos 6 meses; tocar un mes lo deja seleccionado en el reporte. */
 @Composable
 private fun TrendCard(state: ReportsUiState, onSelectMonth: (YearMonth) -> Unit) {
+    val paleta = Wena.paleta
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeader(title = "Últimos 6 meses")
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ChartLegendDot(MaterialTheme.colorScheme.primary, "Gastos")
-                ChartLegendDot(MaterialTheme.colorScheme.tertiary, "Ingresos")
+                ChartLegendKey(paleta.cargo, "Gastos")
+                ChartLegendKey(paleta.abono, "Ingresos")
             }
             Spacer(Modifier.height(12.dp))
             MonthlyBars(
@@ -426,8 +378,9 @@ private fun TrendCard(state: ReportsUiState, onSelectMonth: (YearMonth) -> Unit)
     }
 }
 
+/** La marca de la leyenda es una tecla: un cuadradito de 8 dp, no un punto. */
 @Composable
-private fun ChartLegendDot(color: Color, label: String) {
+private fun ChartLegendKey(color: Color, label: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -435,7 +388,7 @@ private fun ChartLegendDot(color: Color, label: String) {
         Box(
             modifier = Modifier
                 .size(8.dp)
-                .clip(CircleShape)
+                .clip(RoundedCornerShape(1.dp))
                 .background(color),
         )
         Text(
@@ -472,6 +425,12 @@ private fun BudgetsCard(state: ReportsUiState, onEdit: (Long) -> Unit) {
             }
 
             if (state.budgetTotal > 0L) {
+                val totalStatus = Reports.budgetStatus(state.budgetSpent, state.budgetTotal)
+                val totalColor = if (totalStatus != null) {
+                    budgetColor(totalStatus.level)
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
                 Spacer(Modifier.height(10.dp))
                 Text(
                     text = "Presupuestado ${Money.format(state.budgetTotal)} · " +
@@ -481,8 +440,8 @@ private fun BudgetsCard(state: ReportsUiState, onEdit: (Long) -> Unit) {
                 )
                 Spacer(Modifier.height(6.dp))
                 ShareBar(
-                    share = (state.budgetSpent.toFloat() / state.budgetTotal).coerceIn(0f, 1f),
-                    color = MaterialTheme.colorScheme.primary,
+                    share = totalStatus?.fraction?.coerceIn(0f, 1f) ?: 0f,
+                    color = totalColor,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(

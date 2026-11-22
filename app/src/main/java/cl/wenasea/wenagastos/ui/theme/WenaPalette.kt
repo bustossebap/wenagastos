@@ -36,6 +36,11 @@ data class WenaPalette(
     val heroFondo: Color,
     val heroTexto: Color,
     val heroCifra: Color,
+    // Semáforo de presupuesto: verde / ámbar / rojo con los acentos del manual. No usa roles M3
+    // porque `primary/tertiary` no significan "cerca del tope" y en oscuro daban verde.
+    val presupuestoOk: Color,
+    val presupuestoCerca: Color,
+    val presupuestoExcedido: Color,
 )
 
 /**
@@ -61,6 +66,9 @@ internal val WenaPaletteClara = WenaPalette(
     heroFondo = Marino,
     heroTexto = Crema,
     heroCifra = Trigo,
+    presupuestoOk = SalviaTinta,
+    presupuestoCerca = TrigoTinta,
+    presupuestoExcedido = TerracotaTinta,
 )
 
 /**
@@ -87,6 +95,9 @@ internal val WenaPaletteOscura = WenaPalette(
     heroFondo = MarinoAlto,
     heroTexto = Crema,
     heroCifra = Trigo,
+    presupuestoOk = Salvia,
+    presupuestoCerca = Trigo,
+    presupuestoExcedido = TerracotaNoche,
 )
 
 internal val LocalWenaPalette = staticCompositionLocalOf { WenaPaletteClara }
