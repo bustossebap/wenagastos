@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.data.local
 
 import android.content.Context
+import cl.wenasea.wenagastos.data.local.entity.Institution
 
 /**
  * Preferencias que no son datos financieros: el bloqueo al abrir, el modo de color y la fecha del
@@ -13,6 +14,7 @@ object Prefs {
     private const val KEY_LOCK = "bloqueo_al_abrir"
     private const val KEY_BACKUP = "ultimo_respaldo"
     private const val KEY_THEME = "tema"
+    private const val KEY_STATEMENT = "cartola_"
 
     fun isLockEnabled(context: Context): Boolean = prefs(context).getBoolean(KEY_LOCK, false)
 
@@ -38,6 +40,18 @@ object Prefs {
 
     fun setLastBackupAt(context: Context, millis: Long) {
         prefs(context).edit().putLong(KEY_BACKUP, millis).apply()
+    }
+
+    /**
+     * La plantilla con la que se leyó la última cartola de este banco. Va acá y no en Room porque
+     * es una preferencia de lectura del archivo, no historia de plata: si se pierde, la próxima
+     * importación vuelve a deducir las columnas y nada más.
+     */
+    fun statementTemplate(context: Context, institution: Institution): String? =
+        prefs(context).getString(KEY_STATEMENT + institution.name, null)
+
+    fun setStatementTemplate(context: Context, institution: Institution, template: String) {
+        prefs(context).edit().putString(KEY_STATEMENT + institution.name, template).apply()
     }
 
     private fun prefs(context: Context) =

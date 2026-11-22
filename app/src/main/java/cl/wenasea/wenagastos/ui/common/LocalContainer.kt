@@ -46,6 +46,8 @@ object VmFactories {
                 container.categories,
                 container.captureLogs,
                 container.backup,
+                container.statements,
+                container.statementFormats,
                 container.files,
                 container.backupStamp,
             )

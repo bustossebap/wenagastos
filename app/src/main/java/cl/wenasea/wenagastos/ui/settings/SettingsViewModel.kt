@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.wenasea.wenagastos.data.local.BackupStamp
+import cl.wenasea.wenagastos.data.local.StatementFormats
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
@@ -14,6 +15,7 @@ import cl.wenasea.wenagastos.data.repo.BackupRepository
 import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MergePlan
+import cl.wenasea.wenagastos.data.repo.StatementImportRepository
 import cl.wenasea.wenagastos.domain.Credit
 import cl.wenasea.wenagastos.domain.numbers
 import cl.wenasea.wenagastos.domain.parseNumbers
@@ -21,9 +23,12 @@ import cl.wenasea.wenagastos.domain.splitNumbers
 import cl.wenasea.wenagastos.importexport.Backup
 import cl.wenasea.wenagastos.importexport.BackupCrypto
 import cl.wenasea.wenagastos.importexport.BackupException
+import cl.wenasea.wenagastos.importexport.Csv
 import cl.wenasea.wenagastos.importexport.DocumentFiles
 import cl.wenasea.wenagastos.importexport.Export
 import cl.wenasea.wenagastos.importexport.Json
+import cl.wenasea.wenagastos.importexport.StatementException
+import cl.wenasea.wenagastos.importexport.StatementImport
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -62,6 +67,8 @@ class SettingsViewModel(
     categories: CategoryRepository,
     captureLogs: CaptureLogRepository,
     private val backup: BackupRepository,
+    private val statements: StatementImportRepository,
+    private val formats: StatementFormats,
     private val files: DocumentFiles,
     private val stamp: BackupStamp,
 ) : ViewModel() {
@@ -291,6 +298,24 @@ class SettingsViewModel(
     }
 
     /**
+     * Importa la cartola de una cuenta: la lee con la plantilla que se recuerda de ese banco (o la
+     * deduce del archivo la primera vez), anota lo que falta y deja el saldo del cierre como corte.
+     * Lo que ya había llegado por aviso no se duplica: se cruza por día, monto y sentido.
+     */
+    fun importStatement(account: AccountEntity, uri: Uri) = runTask {
+        val text = files.readText(uri)
+        val sheet = StatementImport.read(Csv.split(text), formats.templateFor(account.institution))
+            ?: throw StatementException(
+                "No reconocí la cartola: no encontré la fila de títulos con la fecha y el monto. " +
+                    "Exporta la cartola del mes como CSV desde el sitio del banco.",
+            )
+        // Acertó la lectura: la próxima cartola de este banco se lee con la misma plantilla.
+        formats.remember(account.institution, sheet.template)
+        val report = statements.import(account.id, sheet, files.name(uri))
+        report.describe()
+    }
+
+    /**
      * Todo el trabajo de archivo corre en IO y termina en un aviso, nunca en una excepción que
      * tumbe la pantalla: si el selector devolvió una URI que ya no existe, se dice y se sigue.
      */
@@ -301,6 +326,8 @@ class SettingsViewModel(
                 withContext(Dispatchers.IO) { block() } to false
             } catch (e: BackupException) {
                 (e.message ?: "No se pudo leer el respaldo") to true
+            } catch (e: StatementException) {
+                (e.message ?: "No se pudo leer la cartola") to true
             } catch (e: Json.JsonFormatException) {
                 (e.message ?: "El JSON está dañado") to true
             } catch (e: IOException) {

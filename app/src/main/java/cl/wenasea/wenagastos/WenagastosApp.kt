@@ -9,6 +9,7 @@ import cl.wenasea.wenagastos.data.Seeder
 import cl.wenasea.wenagastos.data.local.BackupStamp
 import cl.wenasea.wenagastos.data.local.DbEncryption
 import cl.wenasea.wenagastos.data.local.DbKey
+import cl.wenasea.wenagastos.data.local.StatementFormats
 import cl.wenasea.wenagastos.data.local.WenagastosDatabase
 import cl.wenasea.wenagastos.data.repo.AccountMergeRepository
 import cl.wenasea.wenagastos.data.repo.AccountRepository
@@ -17,6 +18,7 @@ import cl.wenasea.wenagastos.data.repo.CaptureLogRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.SnapshotRepository
+import cl.wenasea.wenagastos.data.repo.StatementImportRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRunner
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.importexport.DocumentFiles
@@ -83,13 +85,16 @@ class AppContainer(application: Application) {
     /** Cortes de saldo por cuenta: lo que el banco dijo una vez, más los movimientos posteriores. */
     val snapshots by lazy { SnapshotRepository(database.accountSnapshotDao()) }
 
+    /** Una transacción de Room: lo que se escribe en bloque se deshace entero si algo falla. */
+    private val runner = object : TransactionRunner {
+        override suspend fun <T> run(block: suspend () -> T): T =
+            database.withTransaction { block() }
+    }
+
     /** Unir dos cuentas en una: la tarjeta de débito pasa a ser un número de la cuenta. */
     val accountMerge by lazy {
         AccountMergeRepository(
-            runner = object : TransactionRunner {
-                override suspend fun <T> run(block: suspend () -> T): T =
-                    database.withTransaction { block() }
-            },
+            runner = runner,
             accounts = database.accountDao(),
             movements = database.transactionDao(),
             snapshots = database.accountSnapshotDao(),
@@ -114,6 +119,20 @@ class AppContainer(application: Application) {
 
     /** Escribe y lee el archivo que el usuario elige en el selector del sistema. */
     val files = DocumentFiles(application.contentResolver)
+
+    /** La plantilla de cartola que se recuerda por banco. */
+    val statementFormats = StatementFormats(application)
+
+    /** Anota la cartola importada: movimientos nuevos y el saldo del cierre como corte. */
+    val statements by lazy {
+        StatementImportRepository(
+            runner = runner,
+            transactions = transactions,
+            snapshots = snapshots,
+            rules = rules,
+            categories = categories,
+        )
+    }
 
     /** Qué dice el sistema de cada app de banco: instalada, habilitada y con avisos. */
     val apps by lazy { AppLookup(application) }

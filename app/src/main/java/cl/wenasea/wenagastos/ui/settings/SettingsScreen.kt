@@ -184,6 +184,7 @@ fun SettingsScreen(
                 onExportJson = viewModel::exportJson,
                 onCreateBackup = viewModel::createBackup,
                 onRestoreBackup = viewModel::restoreBackup,
+                onImportStatement = viewModel::importStatement,
             )
         }
 

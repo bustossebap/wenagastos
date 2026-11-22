@@ -3,11 +3,15 @@ package cl.wenasea.wenagastos.ui.settings
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -19,14 +23,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.importexport.BackupCrypto
 import cl.wenasea.wenagastos.importexport.DocumentFiles
+import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.SectionHeader
+import cl.wenasea.wenagastos.ui.common.asColor
 
 /**
  * La tarjeta "Datos": exportar a planilla, respaldar cifrado y restaurar.
@@ -42,6 +50,7 @@ internal fun DataCard(
     onExportJson: (Uri) -> Unit,
     onCreateBackup: (Uri, String) -> Unit,
     onRestoreBackup: (Uri, String) -> Unit,
+    onImportStatement: (AccountEntity, Uri) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var askBackupPassword by remember { mutableStateOf(false) }
@@ -50,6 +59,10 @@ internal fun DataCard(
 
     // La contraseña se escribe antes de abrir el selector: el archivo se crea al confirmar.
     var pendingPassword by remember { mutableStateOf<String?>(null) }
+
+    // La cartola es de una cuenta, y hay que saberlo antes de abrir el archivo.
+    var askStatementAccount by remember { mutableStateOf(false) }
+    var statementTarget by remember { mutableStateOf<AccountEntity?>(null) }
 
     val csvLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(DocumentFiles.CSV_MIME),
@@ -74,6 +87,15 @@ internal fun DataCard(
             restoreTarget = uri
             askRestorePassword = true
         }
+    }
+
+    // Los bancos no coinciden en el tipo que declaran: el selector abre con varios mime de texto.
+    val statementLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val account = statementTarget
+        statementTarget = null
+        if (uri != null && account != null) onImportStatement(account, uri)
     }
 
     Card(modifier = modifier.fillMaxWidth()) {
@@ -113,6 +135,26 @@ internal fun DataCard(
                     enabled = !state.busy,
                 ) {
                     Text("Restaurar")
+                }
+            }
+            SectionHeader(
+                title = "Cartola",
+                modifier = Modifier.padding(top = 8.dp),
+            )
+            Text(
+                text = "La cartola del mes en CSV trae los gastos que el aviso del banco no alcanzó " +
+                    "a contar. Se cruza por día, monto y sentido: lo que ya está anotado no se " +
+                    "duplica, y el saldo del cierre queda como corte de la cuenta.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Row {
+                TextButton(
+                    onClick = { askStatementAccount = true },
+                    enabled = !state.busy && state.accounts.any { it.isActive },
+                ) {
+                    Text("Importar cartola")
                 }
             }
             if (state.busy) {
@@ -171,6 +213,55 @@ internal fun DataCard(
                 askRestorePassword = false
                 restoreTarget = null
                 onRestoreBackup(target, password)
+            },
+        )
+    }
+
+    if (askStatementAccount) {
+        AlertDialog(
+            onDismissRequest = { askStatementAccount = false },
+            title = { Text("¿De qué cuenta es la cartola?") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = "Elige la cuenta cuyos movimientos trae el archivo. Lo que ya llegó " +
+                            "por aviso del banco no se anota dos veces.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    state.accounts.filter { it.isActive }.forEach { account ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    askStatementAccount = false
+                                    statementTarget = account
+                                    statementLauncher.launch(DocumentFiles.TEXT_MIMES)
+                                }
+                                .padding(top = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CategoryAvatar(
+                                emoji = account.institution.emoji,
+                                color = account.colorHex.asColor(),
+                                size = 28,
+                            )
+                            Column {
+                                Text(text = account.name, style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    text = "${account.institution.label} · ${account.kind.label}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { askStatementAccount = false }) { Text("Cancelar") }
             },
         )
     }
