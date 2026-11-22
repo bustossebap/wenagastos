@@ -333,8 +333,16 @@ fun SettingsScreen(
                 editTarget = null
                 viewModel.clearError()
             },
-            onSave = { name, institution, kind, accountNumber, cards ->
-                viewModel.saveAccount(editing, name, institution, kind, accountNumber, cards)
+            onSave = { name, institution, kind, accountNumber, cards, credit ->
+                viewModel.saveAccount(
+                    editing,
+                    name,
+                    institution,
+                    kind,
+                    accountNumber,
+                    cards,
+                    credit,
+                )
             },
             onMerge = { candidate ->
                 editing?.let { viewModel.previewMerge(it, candidate) }

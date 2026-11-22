@@ -43,6 +43,9 @@ class BackupTest {
         kind = AccountKind.CREDIT,
         colorHex = "#7CB342",
         createdAt = 1_100L,
+        creditLimit = 1_500_000L,
+        statementDay = 25,
+        paymentDay = 5,
     )
     private val category = CategoryEntity(
         id = 10,
@@ -125,15 +128,33 @@ class BackupTest {
         assertEquals("7788", accounts[1].cardLast4)
     }
 
+    /** Un respaldo v3 (antes del cupo) se sigue leyendo: la tarjeta queda sin configurar. */
+    @Test
+    fun `un respaldo sin cupo deja la tarjeta sin configurar`() {
+        val text = """
+            {"app":"Wenagastos","documento":"respaldo","version":3,"schema":6,"cuentas":[
+              {"id":2,"name":"CMR","institution":"FALABELLA","kind":"CREDIT",
+               "cardLast4":"7788","colorHex":"#7CB342","isActive":true,"createdAt":1}]}
+        """.trimIndent()
+
+        val account = Backup.decode(text).accounts.single()
+
+        assertNull(account.creditLimit)
+        assertNull(account.statementDay)
+        assertNull(account.paymentDay)
+    }
+
     @Test
     fun `el archivo se reconoce como respaldo de la app`() {
         val text = Backup.encode(data, schemaVersion = 5)
 
         assertTrue(text.startsWith("""{"app":"Wenagastos","documento":"respaldo","""))
-        assertTrue(text.contains("\"version\":3"))
+        assertTrue(text.contains("\"version\":4"))
         assertTrue(text.contains("\"schema\":5"))
         assertTrue(text.contains("\"accountLast4\":\"1234\""))
         assertTrue(text.contains("\"cardLast4\":\"5678\""))
+        assertTrue(text.contains("\"creditLimit\":1500000"))
+        assertTrue(text.contains("\"statementDay\":25"))
         assertTrue(text.contains("\"saldos\":[{"))
     }
 

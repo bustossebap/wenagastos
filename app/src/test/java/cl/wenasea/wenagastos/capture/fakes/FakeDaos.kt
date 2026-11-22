@@ -73,6 +73,10 @@ class FakeTransactionDao : TransactionDao {
     override fun observeSinceSnapshotCutoffs(): Flow<List<TransactionEntity>> =
         state.map { emptyList() }
 
+    /** Espeja `occurredAt >= :from`; la ventana del ciclo de crédito la elige la pantalla. */
+    override fun observeSince(from: Long): Flow<List<TransactionEntity>> =
+        state.map { list -> list.filter { it.occurredAt >= from } }
+
     override suspend fun getById(id: Long): TransactionEntity? = rows[id]
 
     /** Espeja `BETWEEN :from AND :to` con `ORDER BY occurredAt ASC, id ASC LIMIT 1`. */

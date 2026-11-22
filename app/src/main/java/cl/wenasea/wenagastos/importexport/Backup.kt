@@ -53,8 +53,12 @@ object Backup {
      *
      * v3 agrega `saldos`, los cortes de la Fase 7. Un archivo v2 se lee igual: sin cortes, el
      * saldo de las cuentas queda sin saberse hasta que se escriba uno nuevo.
+     *
+     * v4 agrega `creditLimit`, `statementDay` y `paymentDay` a las cuentas (Fase 7.1). Un v3 se
+     * lee igual: las tres quedan en `null`, que es "no se sabe", y la tarjeta se muestra como
+     * antes hasta que se configure.
      */
-    const val VERSION = 3
+    const val VERSION = 4
 
     fun encode(
         data: BackupData,
@@ -92,6 +96,9 @@ object Backup {
         "colorHex" to account.colorHex,
         "isActive" to account.isActive,
         "createdAt" to account.createdAt,
+        "creditLimit" to account.creditLimit,
+        "statementDay" to account.statementDay,
+        "paymentDay" to account.paymentDay,
     )
 
     private fun categoryJson(category: CategoryEntity): Map<String, Any?> = linkedMapOf(
@@ -245,6 +252,9 @@ object Backup {
             colorHex = map.string("colorHex") ?: Institution.OTHER.colorHex,
             isActive = map.bool("isActive", true),
             createdAt = map.long("createdAt") ?: 0L,
+            creditLimit = map.long("creditLimit"),
+            statementDay = map.long("statementDay")?.toInt(),
+            paymentDay = map.long("paymentDay")?.toInt(),
         )
     }
 

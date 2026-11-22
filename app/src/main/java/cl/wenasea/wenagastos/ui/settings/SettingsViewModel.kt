@@ -103,11 +103,34 @@ class SettingsViewModel(
         kind: AccountKind,
         accountNumber: String?,
         cards: List<String>,
+        credit: CreditInput = CreditInput(),
     ) {
         val cleanName = name.trim()
         if (cleanName.isEmpty()) {
             fail("Ponle un nombre a la cuenta")
             return
+        }
+        // El cupo y los días de corte/pago son de la tarjeta de crédito. En otra cuenta se
+        // ignoran y se guardan en null: una cuenta corriente no tiene facturación.
+        val limitText = credit.limit.filter(Char::isDigit)
+        val cutoffText = credit.statementDay.filter(Char::isDigit)
+        val payText = credit.paymentDay.filter(Char::isDigit)
+        val creditLimit = limitText.toLongOrNull()
+        val statementDay = cutoffText.toIntOrNull()
+        val paymentDay = payText.toIntOrNull()
+        if (kind == AccountKind.CREDIT) {
+            if (limitText.isNotEmpty() && (creditLimit == null || creditLimit <= 0)) {
+                fail("El cupo va en pesos y es mayor que cero")
+                return
+            }
+            if (cutoffText.isNotEmpty() && (statementDay == null || statementDay !in 1..31)) {
+                fail("El día de corte va del 1 al 31")
+                return
+            }
+            if (payText.isNotEmpty() && (paymentDay == null || paymentDay !in 1..31)) {
+                fail("El día de pago va del 1 al 31")
+                return
+            }
         }
         val (accountValue, cardValue) = splitNumbers(kind, accountNumber, cards)
         val wanted = (listOfNotNull(accountValue) + parseNumbers(cardValue)).distinct()
@@ -133,6 +156,9 @@ class SettingsViewModel(
                 accountLast4 = accountValue,
                 cardLast4 = cardValue,
                 colorHex = institution.colorHex,
+                creditLimit = if (kind == AccountKind.CREDIT) creditLimit else null,
+                statementDay = if (kind == AccountKind.CREDIT) statementDay else null,
+                paymentDay = if (kind == AccountKind.CREDIT) paymentDay else null,
             )
             if (editing == null) accounts.add(entity) else accounts.update(entity)
             local.update { it.copy(error = null, saved = true) }

@@ -29,6 +29,19 @@ data class AccountEntity(
     val colorHex: String,
     val isActive: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
+    /**
+     * Cupo de una tarjeta de crédito, en pesos (Fase 7.1). `null` es "no lo he configurado", que
+     * no es lo mismo que cero: sin cupo no se puede decir cuánto queda disponible.
+     */
+    val creditLimit: Long? = null,
+    /**
+     * Día del mes en que el banco cierra la facturación (1–31). Con esto el detalle puede decir
+     * cuánto se ha gastado en el ciclo que corre. Igual que [creditLimit], solo tiene sentido en
+     * una tarjeta de crédito y `null` es "no se sabe", no el día 1.
+     */
+    val statementDay: Int? = null,
+    /** Día del mes en que vence el pago de esa factura (1–31). Opcional. */
+    val paymentDay: Int? = null,
 )
 
 /**

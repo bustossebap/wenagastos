@@ -104,6 +104,11 @@ class AccountMergeRepository(
                     accountLast4 = plan.keep.accountLast4 ?: plan.merge.accountLast4,
                     cardLast4 = cards.joinToString(",").takeIf { it.isNotEmpty() },
                     isActive = plan.keep.isActive || plan.merge.isActive,
+                    // El cupo y el ciclo son de la tarjeta: si la que se queda no los tenía, se
+                    // toman de la otra antes de que desaparezca.
+                    creditLimit = plan.keep.creditLimit ?: plan.merge.creditLimit,
+                    statementDay = plan.keep.statementDay ?: plan.merge.statementDay,
+                    paymentDay = plan.keep.paymentDay ?: plan.merge.paymentDay,
                 ),
             )
             accounts.deleteById(mergeId)

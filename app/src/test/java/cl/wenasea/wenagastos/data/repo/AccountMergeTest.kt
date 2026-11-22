@@ -43,6 +43,9 @@ class AccountMergeTest {
         kind: AccountKind = AccountKind.CHECKING,
         accountLast4: String? = null,
         cardLast4: String? = null,
+        creditLimit: Long? = null,
+        statementDay: Int? = null,
+        paymentDay: Int? = null,
     ) = AccountEntity(
         name = name,
         institution = institution,
@@ -50,6 +53,9 @@ class AccountMergeTest {
         colorHex = institution.colorHex,
         accountLast4 = accountLast4,
         cardLast4 = cardLast4,
+        creditLimit = creditLimit,
+        statementDay = statementDay,
+        paymentDay = paymentDay,
     )
 
     private fun movement(
@@ -212,5 +218,37 @@ class AccountMergeTest {
         val moved = snapshots.stored.single()
         assertEquals(checkingId, moved.accountId)
         assertEquals(250_000L, moved.balance)
+    }
+
+    /**
+     * El cupo y el ciclo son de la tarjeta: si la que desaparece los tenía y la que se queda no,
+     * la fusión no puede llevárselos en silencio.
+     */
+    @Test
+    fun `el cupo de la tarjeta que se une pasa a la que se queda`() = runBlocking {
+        val (keepId, mergeId) = accounts.seed(
+            account(
+                "CMR vieja",
+                institution = Institution.FALABELLA,
+                kind = AccountKind.CREDIT,
+                cardLast4 = "1111",
+            ),
+            account(
+                "CMR nueva",
+                institution = Institution.FALABELLA,
+                kind = AccountKind.CREDIT,
+                cardLast4 = "2222",
+                creditLimit = 1_500_000L,
+                statementDay = 25,
+                paymentDay = 5,
+            ),
+        )
+
+        repository.merge(repository.plan(keepId, mergeId))
+
+        val kept = accounts.getById(keepId)!!
+        assertEquals(1_500_000L, kept.creditLimit)
+        assertEquals(25, kept.statementDay)
+        assertEquals(5, kept.paymentDay)
     }
 }

@@ -36,6 +36,16 @@ import cl.wenasea.wenagastos.domain.cardOnly
 internal data class AccountEditTarget(val account: AccountEntity?)
 
 /**
+ * Lo que se escribe en los campos de una tarjeta de crédito, todavía como texto: el diálogo no
+ * valida montos, eso lo hace el ViewModel para que el error se vea en el mismo lugar que los demás.
+ */
+data class CreditInput(
+    val limit: String = "",
+    val statementDay: String = "",
+    val paymentDay: String = "",
+)
+
+/**
  * Alta y edición de una cuenta: nombre, institución, tipo, el número de la cuenta (el de las
  * transferencias) y los de sus tarjetas (los de las compras). Sobre una cuenta existente también
  * se puede archivar (si tiene movimientos), borrar (solo si no tiene, porque la llave foránea se
@@ -48,7 +58,7 @@ internal fun AccountEditDialog(
     mergeCandidates: List<AccountEntity>,
     error: String?,
     onDismiss: () -> Unit,
-    onSave: (String, Institution, AccountKind, String?, List<String>) -> Unit,
+    onSave: (String, Institution, AccountKind, String?, List<String>, CreditInput) -> Unit,
     onMerge: (AccountEntity) -> Unit,
     onSetActive: (Boolean) -> Unit,
     onDelete: () -> Unit,
@@ -83,6 +93,15 @@ internal fun AccountEditDialog(
     }
     var draft by remember(account?.id) { mutableStateOf("") }
     var confirmingDelete by remember(account?.id) { mutableStateOf(false) }
+    var creditLimit by remember(account?.id) {
+        mutableStateOf(account?.creditLimit?.toString().orEmpty())
+    }
+    var statementDay by remember(account?.id) {
+        mutableStateOf(account?.statementDay?.toString().orEmpty())
+    }
+    var paymentDay by remember(account?.id) {
+        mutableStateOf(account?.paymentDay?.toString().orEmpty())
+    }
 
     fun addDraft() {
         val digits = draft.filter(Char::isDigit).take(4)
@@ -198,6 +217,64 @@ internal fun AccountEditDialog(
                             .fillMaxWidth()
                             .padding(top = 8.dp),
                     )
+
+                    if (kind == AccountKind.CREDIT) {
+                        Text(
+                            text = "Cupo y ciclo",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 16.dp),
+                        )
+                        Text(
+                            text = "El cupo es lo que el banco te deja gastar. Con el día de " +
+                                "corte, el detalle de saldos dice cuánto llevas gastado en el " +
+                                "ciclo que todavía no se factura.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                        OutlinedTextField(
+                            value = creditLimit,
+                            onValueChange = { input ->
+                                creditLimit = input.filter(Char::isDigit).take(9)
+                            },
+                            label = { Text("Cupo en pesos") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                        )
+                        Row(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            OutlinedTextField(
+                                value = statementDay,
+                                onValueChange = { input ->
+                                    statementDay = input.filter(Char::isDigit).take(2)
+                                },
+                                label = { Text("Día de corte") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                ),
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedTextField(
+                                value = paymentDay,
+                                onValueChange = { input ->
+                                    paymentDay = input.filter(Char::isDigit).take(2)
+                                },
+                                label = { Text("Día de pago") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                ),
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
 
                     if (!cardOnly) {
                         Text(
@@ -316,6 +393,7 @@ internal fun AccountEditDialog(
                             kind,
                             accountNumber.ifBlank { null },
                             cards.toList(),
+                            CreditInput(creditLimit, statementDay, paymentDay),
                         )
                     },
                 ) {

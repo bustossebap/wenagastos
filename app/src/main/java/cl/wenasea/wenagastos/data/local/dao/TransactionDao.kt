@@ -164,6 +164,15 @@ interface TransactionDao {
     )
     fun observeSinceSnapshotCutoffs(): Flow<List<TransactionEntity>>
 
+    /**
+     * Los movimientos desde un instante, para el ciclo de una tarjeta de crédito (Fase 7.1): el
+     * ciclo puede empezar antes que el corte de saldo, así que la ventana la pide la pantalla.
+     */
+    @Query(
+        "SELECT * FROM transactions WHERE occurredAt >= :from ORDER BY occurredAt ASC, id ASC",
+    )
+    fun observeSince(from: Long): Flow<List<TransactionEntity>>
+
     /** Vacía la tabla. Solo lo usa la restauración de un respaldo, dentro de una transacción. */
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()

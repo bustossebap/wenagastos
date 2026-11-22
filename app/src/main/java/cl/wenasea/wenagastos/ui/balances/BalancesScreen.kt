@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.domain.AccountBalance
+import cl.wenasea.wenagastos.domain.CreditUsage
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.InstitutionBalance
 import cl.wenasea.wenagastos.domain.Money
@@ -102,6 +103,7 @@ fun BalancesScreen(
             InstitutionCard(
                 group = group,
                 monthSpend = state.monthSpend,
+                credit = state.credit,
                 onEdit = { editing = it },
             )
         }
@@ -176,6 +178,7 @@ private fun TotalCard(state: BalancesUiState) {
 private fun InstitutionCard(
     group: InstitutionBalance,
     monthSpend: Map<Long, Long>,
+    credit: Map<Long, CreditUsage>,
     onEdit: (AccountBalance) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -211,6 +214,7 @@ private fun InstitutionCard(
                 AccountRow(
                     balance = balance,
                     monthSpend = monthSpend[balance.account.id] ?: 0L,
+                    usage = credit[balance.account.id],
                     onEdit = { onEdit(balance) },
                 )
             }
@@ -222,6 +226,7 @@ private fun InstitutionCard(
 private fun AccountRow(
     balance: AccountBalance,
     monthSpend: Long,
+    usage: CreditUsage?,
     onEdit: () -> Unit,
 ) {
     val debt = balance.account.kind == AccountKind.CREDIT
@@ -250,6 +255,7 @@ private fun AccountRow(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (usage != null) CreditLines(usage = usage, limit = balance.account.creditLimit)
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(
@@ -276,6 +282,45 @@ private fun AccountRow(
                 Text("Saldo", style = MaterialTheme.typography.labelMedium)
             }
         }
+    }
+}
+
+/**
+ * Lo de una tarjeta de crédito (Fase 7.1): cuánto cupo queda y cómo va el ciclo que corre. Son dos
+ * números de distinta confianza —el disponible sale de la deuda que dijo el banco, las compras del
+ * ciclo salen de los avisos que llegaron— y por eso van en líneas separadas.
+ */
+@Composable
+private fun CreditLines(usage: CreditUsage, limit: Long?) {
+    if (limit != null) {
+        val available = usage.available
+        Text(
+            text = if (available != null) {
+                "Cupo ${Money.format(limit)} · disponible ${Money.format(available)}"
+            } else {
+                "Cupo ${Money.format(limit)} · falta el saldo para saber cuánto queda"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (available != null && available < 0) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+    }
+    val cycle = usage.cycle ?: return
+    Text(
+        text = "Ciclo ${Dates.shortDateLabel(Dates.toLocalDate(cycle.start))} → " +
+            "${Dates.shortDateLabel(cycle.closing)}: ${Money.format(usage.spent)} en compras",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    cycle.due?.let { due ->
+        Text(
+            text = "El pago de esa factura vence el ${Dates.shortDateLabel(due)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

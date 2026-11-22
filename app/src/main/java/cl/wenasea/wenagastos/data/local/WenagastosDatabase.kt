@@ -37,6 +37,9 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
         AutoMigration(from = 3, to = 4),
         // Fase 7: tabla `account_snapshots` (saldo confirmado por cuenta) e índice `accountId + asOf`.
         AutoMigration(from = 5, to = 6),
+        // Fase 7.1: cupo, día de corte y día de pago en `accounts` (tres columnas que admiten NULL,
+        // así que Room puede agregarlas sin recrear la tabla).
+        AutoMigration(from = 6, to = 7),
     ],
 )
 @TypeConverters(Converters::class)
@@ -56,7 +59,7 @@ abstract class WenagastosDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "wenagastos.db"
-        const val VERSION = 6
+        const val VERSION = 7
 
         /** Fase 2: tabla de diagnóstico de la captura por notificaciones. */
         val MIGRATION_1_2 = object : Migration(1, 2) {

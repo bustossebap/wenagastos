@@ -50,6 +50,10 @@ object Dates {
     fun fullDateLabel(epochMillis: Long): String =
         toLocalDate(epochMillis).format(DateTimeFormatter.ofPattern("dd-MM-yyyy", locale))
 
+    /** "25-11": día y mes de una fecha sin año, para los ciclos de facturación. */
+    fun shortDateLabel(date: LocalDate): String =
+        date.format(DateTimeFormatter.ofPattern("dd-MM", locale))
+
     /** "2026-11-20": ISO, para que la planilla ordene solo y no confunda día con mes. */
     fun isoDate(epochMillis: Long): String = toLocalDate(epochMillis).toString()
 
