@@ -50,6 +50,27 @@ interface TransactionDao {
     suspend fun countByHash(hash: String): Int
 
     /**
+     * Igual que [findNearby] pero dentro de una cuenta y sin `LIMIT`: la importación de cartolas
+     * necesita saber cuántos iguales hay, porque el mismo gasto puede estar dos veces (dos cafés
+     * de $2.500 el mismo día) y cada fila de la cartola tiene que calzar con uno.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE amount = :amount AND direction = :direction AND accountId = :accountId
+          AND occurredAt BETWEEN :from AND :to
+        ORDER BY occurredAt ASC, id ASC
+        """,
+    )
+    suspend fun findAllNearbyIn(
+        accountId: Long,
+        amount: Long,
+        direction: String,
+        from: Long,
+        to: Long,
+    ): List<TransactionEntity>
+
+    /**
      * La otra pata de un traspaso en una cuenta concreta: mismo monto, sentido contrario y
      * cerca en el tiempo. Lo usa el editor para no crear dos veces la misma pata.
      */

@@ -4,7 +4,6 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
-import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
@@ -316,21 +315,15 @@ class CaptureEngine(
             },
         )
 
-    private suspend fun resolveCategoryId(parsed: ParsedNotification): Long? {
-        val active = categories.listActive()
-        // Un traspaso no es gasto ni ingreso: va a la categoría de tipo TRANSFER ("Entre cuentas").
-        if (parsed.isTransfer) {
-            return active.firstOrNull { it.kind == CategoryKind.TRANSFER }?.id
-        }
-        // Lo que el usuario enseñó para ese comercio manda sobre la semilla del catálogo.
-        if (parsed.merchantFound) {
-            rules.resolve(parsed.merchant, parsed.direction)?.let { return it }
-        }
-        val name = MerchantCategories.categoryFor(parsed.merchant, parsed.direction, parsed.rawText)
-            ?: return null
-        val wanted = TextNorm.plain(name)
-        return active.firstOrNull { TextNorm.plain(it.name) == wanted }?.id
-    }
+    private suspend fun resolveCategoryId(parsed: ParsedNotification): Long? = CategoryPick.resolve(
+        rules = rules,
+        categories = categories,
+        merchant = parsed.merchant,
+        direction = parsed.direction,
+        rawText = parsed.rawText,
+        merchantKnown = parsed.merchantFound,
+        isTransfer = parsed.isTransfer,
+    )
 
     private fun buildNotes(parsed: ParsedNotification, choice: AccountChoice): String? {
         val reasons = buildList {

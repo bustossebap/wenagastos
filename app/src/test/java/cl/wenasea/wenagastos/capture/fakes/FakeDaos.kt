@@ -89,6 +89,20 @@ class FakeTransactionDao : TransactionDao {
         .filter { it.amount == amount && it.direction.name == direction && it.occurredAt in from..to }
         .minWithOrNull(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
 
+    /** Espeja `findAllNearbyIn`: mismo filtro que [findNearby] más la cuenta, con todos los iguales. */
+    override suspend fun findAllNearbyIn(
+        accountId: Long,
+        amount: Long,
+        direction: String,
+        from: Long,
+        to: Long,
+    ): List<TransactionEntity> = rows.values
+        .filter {
+            it.amount == amount && it.direction.name == direction &&
+                it.accountId == accountId && it.occurredAt in from..to
+        }
+        .sortedWith(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
+
     override suspend fun countByHash(hash: String): Int =
         rows.values.count { it.dedupeHash == hash }
 

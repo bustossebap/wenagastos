@@ -211,6 +211,26 @@ class TransactionRepository(private val dao: TransactionDao) {
         windowMillis: Long = 5 * 60_000L,
     ): TransactionEntity? = dao.findNearby(amount, direction.name, at - windowMillis, at + windowMillis)
 
+    /**
+     * Lo mismo, pero en una cuenta concreta y con todos los parecidos. La importación de cartolas
+     * la usa con una ventana ancha —el aviso del banco y la cartola hablan del mismo gasto con
+     * horas, o un día, de diferencia— y necesita la lista: si el mismo gasto está dos veces, cada
+     * fila de la cartola calza con uno.
+     */
+    suspend fun findAllNearbyIn(
+        accountId: Long,
+        amount: Long,
+        direction: Direction,
+        at: Long,
+        windowMillis: Long = 5 * 60_000L,
+    ): List<TransactionEntity> = dao.findAllNearbyIn(
+        accountId,
+        amount,
+        direction.name,
+        at - windowMillis,
+        at + windowMillis,
+    )
+
     /** La otra pata de un traspaso que ya está anotada en [accountId]. */
     suspend fun findCounterpart(
         amount: Long,

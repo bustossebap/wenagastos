@@ -37,6 +37,12 @@ object Dates {
     fun startOfDay(date: LocalDate): Long =
         date.atStartOfDay(zone).toInstant().toEpochMilli()
 
+    /**
+     * El último milisegundo del día. El corte que informa la cartola es del cierre, no del
+     * comienzo: un saldo anotado a las 00:00 dejaría afuera los movimientos de ese mismo día.
+     */
+    fun endOfDay(date: LocalDate): Long = startOfDay(date.plusDays(1)) - 1
+
     fun today(): LocalDate = LocalDate.now(zone)
 
     fun todayMillis(): Long = startOfDay(today())
