@@ -12,9 +12,9 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
- * El ciclo de una tarjeta de crédito (Fase 7.1): dónde empieza, cuándo cierra, qué compras cuentan
- * y cuánto cupo queda. Las fechas de las pruebas son fijas para que el resultado no dependa del día
- * en que se corran.
+ * El ciclo de una tarjeta de crédito (Fase 7.1): dónde empieza, cuándo cierra, qué compras cuentan,
+ * cuánto cupo queda y cómo se leen los tres campos del diálogo. Las fechas de las pruebas son fijas
+ * para que el resultado no dependa del día en que se corran.
  */
 class CreditTest {
 
@@ -142,6 +142,17 @@ class CreditTest {
     }
 
     @Test
+    fun `la deuda escrita en la tarjeta se guarda como saldo negativo`() {
+        assertEquals(-200_000L, Credit.balanceFromDebt("200000"))
+        assertEquals(-200_000L, Credit.balanceFromDebt("200.000"))
+        // El diálogo viejo pedía el signo: el monto no cambia y no se resta dos veces.
+        assertEquals(-200_000L, Credit.balanceFromDebt("-200.000"))
+        assertEquals(0L, Credit.balanceFromDebt("0"))
+        assertNull(Credit.balanceFromDebt(""))
+        assertNull(Credit.balanceFromDebt("abc"))
+    }
+
+    @Test
     fun `una cuenta que no es de credito no tiene cupo`() {
         val usage = Credit.usage(
             card(kind = AccountKind.CHECKING, limit = 1_000_000),
@@ -154,5 +165,65 @@ class CreditTest {
         assertNull(usage.cycle)
         assertNull(usage.debt)
         assertNull(usage.available)
+    }
+
+    @Test
+    fun `lee el cupo y los dias de la tarjeta`() {
+        val parsed = Credit.parse(AccountKind.CREDIT, "1.500.000", "25", "5")
+
+        assertNull(parsed.error)
+        assertEquals(1_500_000L, parsed.fields.limit)
+        assertEquals(25, parsed.fields.statementDay)
+        assertEquals(5, parsed.fields.paymentDay)
+    }
+
+    @Test
+    fun `los campos vacios quedan sin configurar y no son cero`() {
+        val parsed = Credit.parse(AccountKind.CREDIT, "", "  ", "")
+
+        assertNull(parsed.error)
+        assertNull(parsed.fields.limit)
+        assertNull(parsed.fields.statementDay)
+        assertNull(parsed.fields.paymentDay)
+    }
+
+    @Test
+    fun `un cupo de cero o negativo no se acepta`() {
+        assertEquals(
+            "El cupo va en pesos y es mayor que cero",
+            Credit.parse(AccountKind.CREDIT, "0", "", "").error,
+        )
+        assertEquals(
+            "El cupo no puede ser negativo",
+            Credit.parse(AccountKind.CREDIT, "-50.000", "", "").error,
+        )
+        // Un texto sin dígitos no configura nada: no es un cupo de cero.
+        assertNull(Credit.parse(AccountKind.CREDIT, "abc", "", "").error)
+    }
+
+    @Test
+    fun `los dias van del 1 al 31`() {
+        assertEquals(
+            "El día de corte va del 1 al 31",
+            Credit.parse(AccountKind.CREDIT, "", "32", "").error,
+        )
+        assertEquals(
+            "El día de pago va del 1 al 31",
+            Credit.parse(AccountKind.CREDIT, "", "25", "0").error,
+        )
+        // El 31 existe aunque no todos los meses lo tengan: el ciclo lo recorta al usarlo.
+        val last = Credit.parse(AccountKind.CREDIT, "", "31", "31")
+        assertNull(last.error)
+        assertEquals(31, last.fields.statementDay)
+    }
+
+    @Test
+    fun `una cuenta que no es de credito ignora el cupo y el ciclo`() {
+        val parsed = Credit.parse(AccountKind.CHECKING, "1.500.000", "25", "5")
+
+        assertNull(parsed.error)
+        assertNull(parsed.fields.limit)
+        assertNull(parsed.fields.statementDay)
+        assertNull(parsed.fields.paymentDay)
     }
 }

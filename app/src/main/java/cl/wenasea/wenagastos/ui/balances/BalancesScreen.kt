@@ -124,7 +124,8 @@ fun BalancesScreen(
             target = target,
             onDismiss = { editing = null },
             onSave = { text ->
-                val saved = viewModel.saveBalance(target.account.id, text)
+                val credit = target.account.kind == AccountKind.CREDIT
+                val saved = viewModel.saveBalance(target.account.id, text, credit = credit)
                 if (saved) editing = null
                 saved
             },
@@ -343,20 +344,29 @@ private fun BalanceDialog(
     onSave: (String) -> Boolean,
     onClear: () -> Unit,
 ) {
+    val debt = target.account.kind == AccountKind.CREDIT
     var text by remember(target.account.id) {
-        mutableStateOf(target.balance?.toString().orEmpty())
+        // En la tarjeta el campo es la deuda, así que un saldo negativo se escribe sin signo.
+        val current = target.balance
+        val shown = when {
+            current == null -> ""
+            debt -> (-current).coerceAtLeast(0).toString()
+            else -> current.toString()
+        }
+        mutableStateOf(shown)
     }
     var problem by remember(target.account.id) { mutableStateOf<String?>(null) }
-    val debt = target.account.kind == AccountKind.CREDIT
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Saldo de ${target.account.name}") },
+        title = {
+            Text(if (debt) "Deuda de ${target.account.name}" else "Saldo de ${target.account.name}")
+        },
         text = {
             Column {
                 Text(
                     text = if (debt) {
-                        "Escribe lo que debes hoy. Si la tarjeta está al día, el saldo es 0."
+                        "Escribe lo que debes hoy. Si la tarjeta está al día, escribe 0."
                     } else {
                         "Escribe lo que el banco dice que hay hoy. Lo que ya está anotado " +
                             "antes de este momento queda dentro de ese saldo y no se suma dos veces."
@@ -383,8 +393,12 @@ private fun BalanceDialog(
                     )
                 }
                 Text(
-                    text = "Un saldo negativo es una deuda: escribe -45000 si la tarjeta está " +
-                        "usada o la cuenta en rojo.",
+                    text = if (debt) {
+                        "Se guarda como saldo negativo de la tarjeta, así se resta del cupo. " +
+                            "Si está al día, escribe 0."
+                    } else {
+                        "Un saldo negativo es una deuda: escribe -45000 si la cuenta está en rojo."
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -396,6 +410,8 @@ private fun BalanceDialog(
                 onClick = {
                     problem = if (onSave(text)) {
                         null
+                    } else if (debt) {
+                        "Escribe la deuda: por ejemplo 450.000"
                     } else {
                         "Escribe el saldo: por ejemplo 1.250.000 o -45.000"
                     }

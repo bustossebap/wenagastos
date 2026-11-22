@@ -41,6 +41,22 @@ data class CreditUsage(
 )
 
 /**
+ * Lo que el diálogo de la cuenta escribió sobre la tarjeta, ya leído: número sin puntos y días
+ * dentro de rango. `null` en cualquiera de los tres es "no lo configuré", no cero.
+ */
+data class CreditFields(
+    val limit: Long? = null,
+    val statementDay: Int? = null,
+    val paymentDay: Int? = null,
+)
+
+/**
+ * Resultado de leer esos campos: o `error` con el primer problema, o los valores a guardar.
+ * Los dos nunca llegan juntos.
+ */
+data class CreditParse(val fields: CreditFields = CreditFields(), val error: String? = null)
+
+/**
  * Cupo, ciclo y compras del ciclo de una tarjeta de crédito.
  *
  * El día de corte se toma como un instante a las 00:00: el ciclo va de un día de corte al
@@ -49,6 +65,61 @@ data class CreditUsage(
  * el borde simple y predecible, igual que el corte de saldo incluye su propio instante.
  */
 object Credit {
+
+    /**
+     * Lee el cupo y los días tal como los escribió el usuario en el diálogo de la cuenta.
+     *
+     * Los campos son opcionales: vacío es "no lo configuré" (`null`), no cero, y el texto que no
+     * trae dígitos —un "abc" tecleado por error— tampoco configura nada. Los puntos de miles se
+     * caen solos. En una cuenta que no es de crédito se ignora todo y los tres quedan en `null`
+     * aunque lleguen números: una cuenta corriente no tiene facturación.
+     *
+     * Los mensajes viven acá y no en el ViewModel para poder probarlos sin pantalla.
+     */
+    fun parse(
+        kind: AccountKind,
+        limit: String,
+        statementDay: String,
+        paymentDay: String,
+    ): CreditParse {
+        if (kind != AccountKind.CREDIT) return CreditParse()
+
+        // El campo del diálogo ya solo deja dígitos, pero un pegado puede traer signo; un cupo
+        // negativo no es un cupo de menos, es un error de tipeo.
+        if ('-' in limit) return CreditParse(error = "El cupo no puede ser negativo")
+
+        val limitText = limit.filter(Char::isDigit)
+        val cutoffText = statementDay.filter(Char::isDigit)
+        val payText = paymentDay.filter(Char::isDigit)
+
+        val limitValue = limitText.toLongOrNull()
+        if (limitText.isNotEmpty() && (limitValue == null || limitValue <= 0)) {
+            return CreditParse(error = "El cupo va en pesos y es mayor que cero")
+        }
+
+        val cutoffValue = cutoffText.toIntOrNull()
+        if (cutoffText.isNotEmpty() && (cutoffValue == null || cutoffValue !in 1..31)) {
+            return CreditParse(error = "El día de corte va del 1 al 31")
+        }
+
+        val payValue = payText.toIntOrNull()
+        if (payText.isNotEmpty() && (payValue == null || payValue !in 1..31)) {
+            return CreditParse(error = "El día de pago va del 1 al 31")
+        }
+
+        return CreditParse(CreditFields(limitValue, cutoffValue, payValue))
+    }
+
+    /**
+     * Lee la deuda que se escribe en el diálogo de una tarjeta y la devuelve como saldo: negativa,
+     * porque la deuda se resta del cupo. Acepta "200.000" y también el "-200.000" que pedía el
+     * diálogo antes: el signo no cambia el monto de la deuda, solo decide cómo se guarda, y acá se
+     * guarda una sola vez.
+     */
+    fun balanceFromDebt(text: String): Long? {
+        val value = text.filter(Char::isDigit).toLongOrNull() ?: return null
+        return -value
+    }
 
     /** El día pedido, recortado al último del mes (el 31 en febrero es el 28 o el 29). */
     fun dayIn(month: YearMonth, day: Int): LocalDate =

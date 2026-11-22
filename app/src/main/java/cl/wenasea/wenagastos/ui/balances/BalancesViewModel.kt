@@ -96,10 +96,14 @@ class BalancesViewModel(
      * lo que ya está registrado antes de este instante se considera incluido en ese saldo, y lo
      * que llegue después lo mueve solo.
      *
+     * En una tarjeta (`credit = true`) el número que se escribe es la **deuda**, no el saldo:
+     * `Credit.balanceFromDebt` la guarda negativa para que se reste del cupo.
+     *
      * Devuelve `false` si el texto no es un monto, para que el diálogo no se cierre en vano.
      */
-    fun saveBalance(accountId: Long, input: String): Boolean {
-        val balance = parseBalance(input) ?: return false
+    fun saveBalance(accountId: Long, input: String, credit: Boolean = false): Boolean {
+        val balance = (if (credit) Credit.balanceFromDebt(input) else parseBalance(input))
+            ?: return false
         viewModelScope.launch {
             snapshots.add(
                 AccountSnapshotEntity(
