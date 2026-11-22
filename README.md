@@ -121,11 +121,13 @@ Notificación push del banco o correo en Gmail (Santander, Banco Falabella, Merc
 ## Compilar e instalar
 
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+# El `java` del sistema en el Mac es 8 y Gradle lo rechaza ("requires at least JVM runtime
+# version 11"): hay que apuntar al JDK completo, con su archivo `release` adentro.
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 
 ./gradlew :app:assembleDebug          # genera app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug           # instala en el dispositivo conectado por adb
-./gradlew :app:testDebugUnitTest      # 215 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, saldos, cupo, ciclo y deuda de la tarjeta, export/respaldo, cabecera/llave de la base, estado de las apps de banco y recordatorio de respaldo
+./gradlew :app:testDebugUnitTest      # 224 pruebas: parsers, montos, categorías, traspasos, reglas, motor, reportes, saldos, cupo, ciclo y deuda de la tarjeta, export/respaldo, cabecera/llave de la base, estado de las apps de banco, recordatorio de respaldo, contraste de la paleta y modo de color
 ./gradlew :app:connectedDebugAndroidTest  # 4 pruebas instrumentadas: migración real a SQLCipher y la 6 -> 7 sobre una base v6 (necesita emulador o teléfono con API 31 o más)
 adb shell am start -n cl.wenasea.wenagastos/.MainActivity
 ```
