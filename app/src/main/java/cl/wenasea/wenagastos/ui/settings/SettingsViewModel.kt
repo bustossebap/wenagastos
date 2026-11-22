@@ -221,13 +221,16 @@ class SettingsViewModel(
 
     /**
      * Respaldo cifrado con contraseña. La clave no se guarda en ninguna parte: si se olvida, el
-     * archivo no se puede abrir. Por eso el mínimo de caracteres y el aviso en pantalla.
+     * archivo no se puede abrir. Por eso el mínimo de caracteres, que no sea de puros números y
+     * el aviso en pantalla. Al restaurar no se exige nada: un respaldo viejo con contraseña débil
+     * tiene que poder abrirse igual.
      */
     fun createBackup(uri: Uri, password: String) {
-        if (password.length < BackupCrypto.MIN_PASSWORD) {
+        if (BackupCrypto.isWeakPassword(password)) {
             local.update {
                 it.copy(
-                    notice = "La contraseña necesita al menos ${BackupCrypto.MIN_PASSWORD} caracteres",
+                    notice = "La contraseña necesita al menos ${BackupCrypto.MIN_PASSWORD} " +
+                        "caracteres y no puede ser solo números",
                     noticeIsError = true,
                 )
             }

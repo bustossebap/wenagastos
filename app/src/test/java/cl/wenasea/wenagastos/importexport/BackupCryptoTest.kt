@@ -73,4 +73,24 @@ class BackupCryptoTest {
         assertTrue(BackupCrypto.isBackup(envelope))
         assertFalse(BackupCrypto.isBackup(plain))
     }
+
+    @Test
+    fun `una contrasena corta o de puros numeros se rechaza al crear`() {
+        assertTrue(BackupCrypto.isWeakPassword("12345678"))
+        assertTrue(BackupCrypto.isWeakPassword("123456789012"))
+        assertTrue(BackupCrypto.isWeakPassword("grapa-larga"))
+        assertFalse(BackupCrypto.isWeakPassword("caballo-bateria-grapa-punta"))
+    }
+
+    /**
+     * La regla es solo para crear: el respaldo que ya existe con una contraseña débil tiene que
+     * seguir abriéndose, o la corrección dejaría al usuario sin su única copia.
+     */
+    @Test
+    fun `un respaldo viejo con contrasena debil se sigue abriendo`() {
+        val debil = "12345678".toCharArray()
+        val envelope = BackupCrypto.encrypt(plain, debil, iterations = 1_000)
+
+        assertArrayEquals(plain, BackupCrypto.decrypt(envelope, debil))
+    }
 }

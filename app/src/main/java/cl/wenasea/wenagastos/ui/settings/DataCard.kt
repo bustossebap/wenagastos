@@ -194,7 +194,7 @@ private fun PasswordDialog(
 ) {
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
-    val tooShort = password.length < BackupCrypto.MIN_PASSWORD
+    val tooWeak = askConfirmation && BackupCrypto.isWeakPassword(password)
     val mismatch = askConfirmation && repeated != password
 
     AlertDialog(
@@ -232,9 +232,11 @@ private fun PasswordDialog(
                             .padding(top = 8.dp),
                     )
                 }
-                if (password.isNotEmpty() && tooShort) {
+                if (password.isNotEmpty() && tooWeak) {
                     Text(
-                        text = "Mínimo ${BackupCrypto.MIN_PASSWORD} caracteres",
+                        text = "Mínimo ${BackupCrypto.MIN_PASSWORD} caracteres, y no todos " +
+                            "números: una frase de varias palabras es fácil de recordar y no " +
+                            "está en ninguna lista.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 4.dp),
@@ -253,7 +255,7 @@ private fun PasswordDialog(
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(password) },
-                enabled = !tooShort && !mismatch,
+                enabled = !tooWeak && !mismatch,
             ) {
                 if (destructive) {
                     Text(confirmLabel, color = MaterialTheme.colorScheme.error)

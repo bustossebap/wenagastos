@@ -28,8 +28,20 @@ object BackupCrypto {
     const val MAGIC = "WENABK1"
     const val VERSION = 1
 
-    /** Menos que esto se adivina; el diálogo no deja seguir. */
-    const val MIN_PASSWORD = 8
+    /**
+     * Menos que esto se adivina. Al crear, el diálogo no deja seguir: ocho dígitos —el caso
+     * típico— son un PIN y están en las primeras decenas de cualquier lista de contraseñas
+     * filtradas, así que las 120.000 vueltas de PBKDF2 no salvan nada.
+     */
+    const val MIN_PASSWORD = 12
+
+    /**
+     * Demasiado corta, o de puros números, que es un PIN disfrazado. Se exige **solo al crear**:
+     * un respaldo viejo con contraseña débil tiene que poder restaurarse igual, o el respaldo
+     * quedaría inservible justo cuando hace falta.
+     */
+    fun isWeakPassword(password: CharSequence): Boolean =
+        password.length < MIN_PASSWORD || password.all { it.isDigit() }
 
     const val ITERATIONS = 120_000
 
