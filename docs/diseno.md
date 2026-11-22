@@ -148,17 +148,23 @@ cambiar de tema:
 
 ## 4. Componentes firma
 
-Los tres gestos que hacen reconocible la app sin el logo del manual:
+Los cuatro gestos que hacen reconocible la app sin el logo del manual:
 
 1. **Teclas.** El módulo gráfico del manual son barras verticales y horizontales, "rectas pero con
    trazo orgánico". En la app: las barras de `Charts.kt` (la serie mensual y la barra apilada de
    categorías) y `ShareBar` se dibujan como teclas (alturas distintas, separación fina, borde
    levemente irregular) y el tab activo de la barra de navegación se marca con una tecla pisada, no
-   con el pill de Material.
+   con el pill de Material. Desde la etapa 5 lo que se toca también es tecla: `WenaButton` y
+   `WenaChip` (`ui/common/Keys.kt`) reemplazan la píldora de `Button` y el chip rosado de Material
+   por un bloque de 5 dp de radio —apagado con borde, pisado con `primary`—, y el FAB bajó de los
+   16 dp que trae Material 3 a los 12 dp de la escala.
 2. **Borde rasgado.** Una sola vez, en el borde superior del bloque del héroe de Inicio, como las
    bandas de la portada. `Path` con una decena de curvas cortas, 7 dp de amplitud y un perfil fijo
    —no aleatorio— para que no cambie de forma entre recomposiciones (`HeroBlock.kt`).
-3. **Bloques de color con el texto que manda el manual.** Un badge sobre marino lleva crema; sobre
+3. **Renglones rayados.** Las listas largas —los movimientos del mes, las cuentas de cada banco, las
+   categorías de Ajustes— se separan con una regla de 1 dp en `outlineVariant` (`LedgerRule`), no
+   con una tarjeta por fila ni con sombras. La hoja se lee como el libro de cuentas que la app es.
+4. **Bloques de color con el texto que manda el manual.** Un badge sobre marino lleva crema; sobre
    trigo, tinta. Nunca al revés.
 
 Lo que **no** se trae: la mascota (es música), la textura de papel (ensucia la lectura de cifras y
@@ -176,9 +182,10 @@ papeles, área de resguardo).
 | `ui/theme/WenaPalette.kt` | `WenaPalette` y `Wena.paleta`: acentos y colores de dinero por modo |
 | `ui/theme/Type.kt` | familias, escala tipográfica, `Vg5000` y `HeroAmount` |
 | `ui/theme/Shape.kt` | escala de radios |
-| `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca |
+| `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca a 12 dp |
 | `ui/common/HeroBlock.kt` | bloque del héroe y `TornTopEdge` (borde rasgado) |
-| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `EmptyState` |
+| `ui/common/Keys.kt` | `WenaButton` y `WenaChip`: lo que se toca, dibujado como tecla |
+| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `LedgerRule`, `EmptyState` |
 | `ui/common/BudgetComponents.kt` | semáforo de presupuesto: `budgetColor()` desde `Wena.paleta` y `BudgetProgress` |
 | `ui/reports/Charts.kt` | `MonthlyBars` (serie de seis meses) y `CategoryStack` (barra-tecla apilada de partes), dibujados a mano |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
@@ -189,7 +196,9 @@ papeles, área de resguardo).
 `Wena.paleta` es la puerta para lo que el `ColorScheme` de Material 3 no puede expresar: los seis
 acentos del manual, los dos colores de dinero resueltos por modo (`abono`, `cargo`), los tres del
 héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
-(`presupuestoOk`, `presupuestoCerca`, `presupuestoExcedido`).
+(`presupuestoOk`, `presupuestoCerca`, `presupuestoExcedido`). El trío del héroe no es sólo del
+héroe: el patrimonio de Saldos y la portada del bloqueo lo reusan para no inventar un segundo
+marino ni un segundo trigo.
 
 ---
 
@@ -202,7 +211,7 @@ héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
 | 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | ✅ |
 | 3 | Inicio: héroe con borde rasgado y monto en VG5000 | ✅ |
 | 4 | Reportes: barras-tecla y paleta de acento | ✅ héroe, barras-tecla, leyenda, semáforo y categorías |
-| 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | pendiente |
+| 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | ✅ teclas para tocar, renglones rayados, patrimonio en bloque de marca y portada de bloqueo |
 | 6 | Auditoría de contraste en dispositivo + capturas antes/después | pendiente |
 
 ## 7. Pendientes conocidos
@@ -218,6 +227,15 @@ héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
   categoría por categoría, con sus montos y sus movimientos.
 - **Logotipo de Wenagastos:** no existe. Idea anotada, no comprometida: un glifo de barras que se
   lea a la vez como teclas de piano y como barras de gráfico.
+- **Controles de plataforma (etapa 5):** los interruptores y las casillas de Ajustes y del editor
+  siguen siendo `Switch` y `Checkbox` de Material. Se dejaron a propósito: son la única forma de que
+  un lector de pantalla anuncie «activado/desactivado» sin inventar semántica. Queda para la etapa 6
+  decidir si la pista del interruptor —una píldora de 32 dp— se redibuja como tecla o si se asume
+  como control del sistema.
+- **Notas teñidas de Inicio (etapa 5):** `CaptureOffCard` y `BackupDueCard` siguen usando
+  `errorContainer` y `tertiaryContainer`, dos rosados y verdes que no están en la paleta. En el
+  editor y en el bloqueo las notas ya pasaron a papel (`surfaceContainerHigh` con borde de 1 dp);
+  falta decidir si las de Inicio se quedan teñidas —porque avisan— o siguen la misma regla.
 - **Icono de la app:** hoy son barras blancas sobre teal (`#0F766E`); el fondo ya pasó a marino,
   el dibujo de las barras se puede rehacer como teclas en la etapa 6.
 

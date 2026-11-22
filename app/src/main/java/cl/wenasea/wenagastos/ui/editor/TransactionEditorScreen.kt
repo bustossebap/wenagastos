@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.ui.editor
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,12 +16,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -51,6 +50,8 @@ import cl.wenasea.wenagastos.domain.transferColumns
 import cl.wenasea.wenagastos.domain.transferEnds
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
+import cl.wenasea.wenagastos.ui.common.WenaButton
+import cl.wenasea.wenagastos.ui.common.WenaChip
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -179,15 +180,17 @@ fun TransactionEditorScreen(
             ?.takeIf { it.status == TransactionStatus.PENDING }
             ?.notes
         if (pendingNote != null) {
+            // Nota de papel aparte, no bloque de color: el aviso tiene que leerse, no gritar.
             Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = MaterialTheme.shapes.medium,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(
                     text = "Por revisar: $pendingNote",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(12.dp),
                 )
             }
@@ -197,15 +200,15 @@ fun TransactionEditorScreen(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilterChip(
+            WenaChip(
+                text = if (isTransfer) "Sale de mi cuenta" else "Gasto",
                 selected = direction == Direction.DEBIT,
                 onClick = { direction = Direction.DEBIT },
-                label = { Text(if (isTransfer) "Sale de mi cuenta" else "Gasto") },
             )
-            FilterChip(
+            WenaChip(
+                text = if (isTransfer) "Entra a mi cuenta" else "Ingreso",
                 selected = direction == Direction.CREDIT,
                 onClick = { direction = Direction.CREDIT },
-                label = { Text(if (isTransfer) "Entra a mi cuenta" else "Ingreso") },
             )
         }
 
@@ -313,13 +316,13 @@ fun TransactionEditorScreen(
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.accounts, key = { it.id }) { account ->
-                    FilterChip(
+                    WenaChip(
+                        text = account.name,
                         selected = originId == account.id,
                         onClick = {
                             originId = account.id
                             if (destinationId == account.id) destinationId = -1L
                         },
-                        label = { Text(account.name) },
                     )
                 }
             }
@@ -333,10 +336,10 @@ fun TransactionEditorScreen(
                     items = state.accounts.filter { it.id != originId },
                     key = { it.id },
                 ) { account ->
-                    FilterChip(
+                    WenaChip(
+                        text = account.name,
                         selected = destinationId == account.id,
                         onClick = { destinationId = account.id },
-                        label = { Text(account.name) },
                     )
                 }
             }
@@ -348,10 +351,10 @@ fun TransactionEditorScreen(
             )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(state.accounts, key = { it.id }) { account ->
-                    FilterChip(
+                    WenaChip(
+                        text = account.name,
                         selected = accountId == account.id,
                         onClick = { accountId = account.id },
-                        label = { Text(account.name) },
                     )
                 }
             }
@@ -398,12 +401,12 @@ fun TransactionEditorScreen(
         )
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(visibleCategories, key = { it.id }) { category ->
-                FilterChip(
+                WenaChip(
+                    text = "${category.emoji} ${category.name}",
                     selected = effectiveCategoryId == category.id,
                     onClick = {
                         categoryId = if (categoryId == category.id) -1L else category.id
                     },
-                    label = { Text("${category.emoji} ${category.name}") },
                 )
             }
         }
@@ -451,7 +454,8 @@ fun TransactionEditorScreen(
 
         Spacer(Modifier.height(8.dp))
 
-        Button(
+        WenaButton(
+            text = if (state.isEditing) "Guardar cambios" else "Guardar",
             onClick = {
                 // Un traspaso guarda la cuenta propia en `accountId` y la otra punta en
                 // `transferAccountId`, según si la plata sale o entra.
@@ -475,9 +479,7 @@ fun TransactionEditorScreen(
             },
             enabled = !state.saving,
             modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(if (state.isEditing) "Guardar cambios" else "Guardar")
-        }
+        )
 
         if (state.isEditing) {
             TextButton(

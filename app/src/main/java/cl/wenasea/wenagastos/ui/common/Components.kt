@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -165,6 +166,19 @@ fun ShareBar(
             )
         }
     }
+}
+
+/**
+ * Regla fina de 1 dp entre renglones. En el manual los planos se separan con líneas y bordes, no
+ * con sombras: las listas largas —movimientos, cuentas, categorías— van rayadas como una hoja.
+ */
+@Composable
+fun LedgerRule(modifier: Modifier = Modifier) {
+    HorizontalDivider(
+        modifier = modifier,
+        thickness = 1.dp,
+        color = MaterialTheme.colorScheme.outlineVariant,
+    )
 }
 
 @Composable

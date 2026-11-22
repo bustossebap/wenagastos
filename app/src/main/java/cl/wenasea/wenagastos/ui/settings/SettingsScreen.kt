@@ -38,6 +38,7 @@ import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.domain.accountNumber
 import cl.wenasea.wenagastos.domain.cardNumbers
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
+import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
 import cl.wenasea.wenagastos.ui.common.VmFactories
@@ -203,8 +204,9 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
                     )
-                    state.accounts.forEach { account ->
+                    state.accounts.forEachIndexed { index, account ->
                         val movements = state.movementCount(account)
+                        if (index > 0) LedgerRule(modifier = Modifier.padding(top = 12.dp))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -262,7 +264,8 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     SectionHeader(title = "Categorías (${state.categories.size})")
-                    state.categories.forEach { category ->
+                    state.categories.forEachIndexed { index, category ->
+                        if (index > 0) LedgerRule(modifier = Modifier.padding(top = 10.dp))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()

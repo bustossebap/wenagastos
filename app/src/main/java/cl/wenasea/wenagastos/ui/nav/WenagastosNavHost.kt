@@ -100,6 +100,9 @@ fun WenagastosNavHost() {
                     onClick = { navController.navigate(Routes.editor(-1L)) },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
+                    // El FAB de M3 trae 16 dp de radio, que no está en la escala del manual
+                    // (2, 3, 5, 8 y 12). Se queda en 12: bloque, no burbuja.
+                    shape = MaterialTheme.shapes.extraLarge,
                     // Sin sombra: en el manual los planos se separan con color y borde, no con
                     // elevación. El bloque de color ya se lee solo sobre el papel.
                     elevation = FloatingActionButtonDefaults.elevation(

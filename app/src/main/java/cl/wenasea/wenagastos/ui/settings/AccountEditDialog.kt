@@ -10,7 +10,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -31,6 +30,7 @@ import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.domain.accountNumber
 import cl.wenasea.wenagastos.domain.cardNumbers
 import cl.wenasea.wenagastos.domain.cardOnly
+import cl.wenasea.wenagastos.ui.common.WenaChip
 
 /** Qué cuenta se está creando ([account] `null`) o editando. */
 internal data class AccountEditTarget(val account: AccountEntity?)
@@ -159,10 +159,10 @@ internal fun AccountEditDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Institution.entries.forEach { option ->
-                            FilterChip(
+                            WenaChip(
+                                text = "${option.emoji} ${option.label}",
                                 selected = option == institution,
                                 onClick = { institution = option },
-                                label = { Text("${option.emoji} ${option.label}") },
                             )
                         }
                     }
@@ -178,10 +178,10 @@ internal fun AccountEditDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         AccountKind.entries.forEach { option ->
-                            FilterChip(
+                            WenaChip(
+                                text = option.label,
                                 selected = option == kind,
                                 onClick = { kind = option },
-                                label = { Text(option.label) },
                             )
                         }
                     }

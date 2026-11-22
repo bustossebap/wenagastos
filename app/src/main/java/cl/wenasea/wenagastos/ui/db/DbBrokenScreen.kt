@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cl.wenasea.wenagastos.MainActivity
+import cl.wenasea.wenagastos.ui.common.WenaButton
 
 /**
  * Pantalla para cuando la base cifrada no se puede abrir: el teléfono perdió la llave del Keystore
@@ -75,12 +75,11 @@ fun DbBrokenScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(top = 16.dp),
             )
-            Button(
+            WenaButton(
+                text = "Empezar de cero",
                 onClick = { confirming = true },
                 modifier = Modifier.padding(top = 24.dp),
-            ) {
-                Text("Empezar de cero")
-            }
+            )
         }
     }
 

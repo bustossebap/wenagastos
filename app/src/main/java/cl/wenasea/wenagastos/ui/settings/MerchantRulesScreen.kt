@@ -11,7 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,6 +33,7 @@ import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.EmptyState
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
+import cl.wenasea.wenagastos.ui.common.WenaChip
 import cl.wenasea.wenagastos.ui.common.asColor
 
 /**
@@ -185,10 +185,10 @@ private fun MerchantRuleCard(
                 } else {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(categories, key = { it.id }) { option ->
-                            FilterChip(
+                            WenaChip(
+                                text = "${option.emoji} ${option.name}",
                                 selected = option.id == category?.id,
                                 onClick = { onPick(option.id) },
-                                label = { Text("${option.emoji} ${option.name}") },
                             )
                         }
                     }

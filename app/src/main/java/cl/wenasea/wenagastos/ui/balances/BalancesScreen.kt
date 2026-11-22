@@ -1,6 +1,8 @@
 package cl.wenasea.wenagastos.ui.balances
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,7 +14,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -38,9 +40,11 @@ import cl.wenasea.wenagastos.domain.InstitutionBalance
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.EmptyState
+import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
 import cl.wenasea.wenagastos.ui.common.asColor
+import cl.wenasea.wenagastos.ui.theme.Wena
 
 /**
  * Saldos por banco y por cuenta (Fase 7).
@@ -139,23 +143,38 @@ fun BalancesScreen(
 
 @Composable
 private fun TotalCard(state: BalancesUiState) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-        ),
+    val paleta = Wena.paleta
+    // El patrimonio es la cifra protagonista de esta pantalla, así que usa el mismo bloque de
+    // marca que Inicio: marino de fondo y el número en trigo. Sin el borde rasgado, que se dibuja
+    // una sola vez —en el héroe— y acá no se repite.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(paleta.heroFondo),
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
                 text = "Patrimonio conocido",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = paleta.heroTexto.copy(alpha = 0.8f),
             )
             Text(
-                text = if (state.hasBalances) Money.format(state.total) else "—",
-                style = MaterialTheme.typography.headlineMedium,
+                // Sin cifra no se inventa un cero ni un guion que parezca una barra de carga: se
+                // dice que no se sabe, con la misma palabra que usan las cuentas.
+                text = if (state.hasBalances) Money.format(state.total) else "Sin saldo",
+                style = if (state.hasBalances) {
+                    MaterialTheme.typography.headlineMedium
+                } else {
+                    MaterialTheme.typography.titleLarge
+                },
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                // El trigo es acento: sólo se enciende cuando hay una cifra de verdad que leer.
+                color = if (state.hasBalances) {
+                    paleta.heroCifra
+                } else {
+                    paleta.heroTexto.copy(alpha = 0.7f)
+                },
             )
             Text(
                 text = when {
@@ -168,7 +187,7 @@ private fun TotalCard(state: BalancesUiState) {
                         "las otras ${state.unknownCount} no suman hasta que escribas uno."
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                color = paleta.heroTexto.copy(alpha = 0.8f),
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -199,19 +218,19 @@ private fun InstitutionCard(
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f),
                 )
-                Text(
-                    text = if (group.known > 0) Money.format(group.total) else "Sin saldo",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = if (group.known > 0) {
-                        MaterialTheme.colorScheme.onSurface
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                // El total del banco sólo se dice cuando existe: cada cuenta ya avisa «Sin saldo»,
+                // repetirlo en el encabezado era el mismo dato tres veces en la misma tarjeta.
+                if (group.known > 0) {
+                    Text(
+                        text = Money.format(group.total),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
 
-            group.accounts.forEach { balance ->
+            group.accounts.forEachIndexed { index, balance ->
+                if (index > 0) LedgerRule(modifier = Modifier.padding(top = 14.dp))
                 AccountRow(
                     balance = balance,
                     monthSpend = monthSpend[balance.account.id] ?: 0L,
