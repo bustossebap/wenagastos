@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,9 +52,7 @@ fun MonthSwitcher(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(onClick = onPrevious) {
-            Text("‹", fontSize = 22.sp)
-        }
+        MonthKey(label = "‹", onClick = onPrevious)
         Text(
             text = Dates.monthLabel(month),
             style = MaterialTheme.typography.titleMedium,
@@ -61,9 +60,30 @@ fun MonthSwitcher(
             textAlign = TextAlign.Center,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = onNext) {
-            Text("›", fontSize = 22.sp)
-        }
+        MonthKey(label = "›", onClick = onNext)
+    }
+}
+
+/**
+ * Flecha de mes como tecla: bloque de papel con borde de 1 dp, igual que el tab activo de la
+ * barra. 40 dp de lado y trazo de tinta plena; el color de acento no hace falta aquí.
+ */
+@Composable
+private fun MonthKey(label: String, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(5.dp)
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            fontSize = 20.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

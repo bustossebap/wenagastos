@@ -169,6 +169,8 @@ papeles, área de resguardo).
 | `ui/theme/WenaPalette.kt` | `WenaPalette` y `Wena.paleta`: acentos y colores de dinero por modo |
 | `ui/theme/Type.kt` | familias, escala tipográfica, `Vg5000` |
 | `ui/theme/Shape.kt` | escala de radios |
+| `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca |
+| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow` |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
 | `res/values-night/colors.xml` | arranque en noche |
 | `res/font/` | Instrument Sans 400/600/700, VG5000 |
@@ -185,7 +187,7 @@ acentos del manual y los dos colores de dinero resueltos por modo (`abono`, `car
 |---|---|---|
 | 0 | Fichas, paleta, contrastes | ✅ este documento |
 | 1 | Tokens: color, tipografía, formas, fuentes, arranque | ✅ |
-| 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | pendiente |
+| 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | 🔶 barra y FAB hechos; componentes comunes, pendientes |
 | 3 | Inicio: héroe con borde rasgado y monto en VG5000 | pendiente |
 | 4 | Reportes: barras-tecla y paleta de acento | pendiente |
 | 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | pendiente |

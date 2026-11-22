@@ -1,15 +1,33 @@
 package cl.wenasea.wenagastos.ui.nav
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -25,6 +43,7 @@ import cl.wenasea.wenagastos.ui.movements.MovementsScreen
 import cl.wenasea.wenagastos.ui.reports.ReportsScreen
 import cl.wenasea.wenagastos.ui.settings.MerchantRulesScreen
 import cl.wenasea.wenagastos.ui.settings.SettingsScreen
+import cl.wenasea.wenagastos.ui.theme.Wena
 
 object Routes {
     const val HOME = "home"
@@ -61,27 +80,35 @@ fun WenagastosNavHost() {
     Scaffold(
         bottomBar = {
             if (showChrome) {
-                NavigationBar {
-                    tabs.forEach { tab ->
-                        NavigationBarItem(
-                            selected = currentRoute == tab.route,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(Routes.HOME) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Text(tab.emoji, fontSize = 18.sp) },
-                            label = { Text(tab.label, fontSize = 10.sp) },
-                        )
-                    }
-                }
+                WenaNavBar(
+                    currentRoute = currentRoute,
+                    onSelect = { route ->
+                        navController.navigate(route) {
+                            popUpTo(Routes.HOME) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                )
             }
         },
         floatingActionButton = {
             if (showChrome) {
-                FloatingActionButton(onClick = { navController.navigate(Routes.editor(-1L)) }) {
+                // Bloque de color de marca con el texto que manda el manual: crema sobre marino de
+                // día, tinta sobre trigo de noche. Es el `primary` de cada modo, sin inventar nada.
+                FloatingActionButton(
+                    onClick = { navController.navigate(Routes.editor(-1L)) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    // Sin sombra: en el manual los planos se separan con color y borde, no con
+                    // elevación. El bloque de color ya se lee solo sobre el papel.
+                    elevation = FloatingActionButtonDefaults.elevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        focusedElevation = 0.dp,
+                        hoveredElevation = 0.dp,
+                    ),
+                ) {
                     Text("+", fontSize = 28.sp, fontWeight = FontWeight.Medium)
                 }
             }
@@ -148,5 +175,90 @@ fun WenagastosNavHost() {
                 )
             }
         }
+    }
+}
+
+/**
+ * Barra de navegación con la tecla pisada del manual en vez del pill de Material: el tab activo
+ * se hunde en un bloque de papel con borde de 1 dp, y la etiqueta pasa de gris a tinta plena.
+ * Sin sombras ni elevación — los planos se separan con una línea, como en el manual.
+ */
+@Composable
+private fun WenaNavBar(currentRoute: String?, onSelect: (String) -> Unit) {
+    val paleta = Wena.paleta
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(paleta.fondo),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(paleta.linea),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .height(64.dp)
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            tabs.forEach { tab ->
+                WenaTab(
+                    tab = tab,
+                    selected = currentRoute == tab.route,
+                    onClick = { onSelect(tab.route) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun WenaTab(
+    tab: Tab,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val paleta = Wena.paleta
+    val keyShape = RoundedCornerShape(5.dp)
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .padding(horizontal = 2.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .selectable(selected = selected, onClick = onClick, role = Role.Tab),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 46.dp, height = 30.dp)
+                .then(
+                    if (selected) {
+                        Modifier
+                            .clip(keyShape)
+                            .background(paleta.papelHondo)
+                            .border(1.dp, paleta.linea, keyShape)
+                    } else {
+                        Modifier
+                    },
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(text = tab.emoji, fontSize = 17.sp)
+        }
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = tab.label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) paleta.texto else MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
     }
 }
