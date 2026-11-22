@@ -32,9 +32,8 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.importexport.BackupCrypto
 import cl.wenasea.wenagastos.importexport.DocumentFiles
-import cl.wenasea.wenagastos.ui.common.CategoryAvatar
+import cl.wenasea.wenagastos.ui.common.BankLogo
 import cl.wenasea.wenagastos.ui.common.SectionHeader
-import cl.wenasea.wenagastos.ui.common.asColor
 
 /**
  * La tarjeta "Datos": exportar a planilla, respaldar cifrado y restaurar.
@@ -242,9 +241,9 @@ internal fun DataCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            CategoryAvatar(
-                                emoji = account.institution.emoji,
-                                color = account.colorHex.asColor(),
+                            BankLogo(
+                                institution = account.institution,
+                                colorHex = account.colorHex,
                                 size = 28,
                             )
                             Column {

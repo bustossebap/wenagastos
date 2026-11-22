@@ -37,6 +37,7 @@ import cl.wenasea.wenagastos.capture.BankSource
 import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.domain.accountNumber
 import cl.wenasea.wenagastos.domain.cardNumbers
+import cl.wenasea.wenagastos.ui.common.BankLogo
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
@@ -216,9 +217,9 @@ fun SettingsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            CategoryAvatar(
-                                emoji = account.institution.emoji,
-                                color = account.colorHex.asColor(),
+                            BankLogo(
+                                institution = account.institution,
+                                colorHex = account.colorHex,
                                 size = 34,
                             )
                             Column(modifier = Modifier.weight(1f)) {

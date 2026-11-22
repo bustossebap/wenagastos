@@ -38,12 +38,11 @@ import cl.wenasea.wenagastos.domain.CreditUsage
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.InstitutionBalance
 import cl.wenasea.wenagastos.domain.Money
-import cl.wenasea.wenagastos.ui.common.CategoryAvatar
+import cl.wenasea.wenagastos.ui.common.BankLogo
 import cl.wenasea.wenagastos.ui.common.EmptyState
 import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
-import cl.wenasea.wenagastos.ui.common.asColor
 import cl.wenasea.wenagastos.ui.theme.Wena
 
 /**
@@ -207,9 +206,9 @@ private fun InstitutionCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                CategoryAvatar(
-                    emoji = group.institution.emoji,
-                    color = group.institution.colorHex.asColor(),
+                BankLogo(
+                    institution = group.institution,
+                    colorHex = group.institution.colorHex,
                     size = 30,
                 )
                 Text(

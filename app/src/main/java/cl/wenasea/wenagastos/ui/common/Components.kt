@@ -92,10 +92,16 @@ private fun MonthKey(label: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Encabezado de sección. [subtitle] existe para decir **de qué** es la lista sin gastar un renglón
+ * aparte: en Inicio, «Últimos movimientos» con «6 de 23 movimientos · Octubre de 2026» debajo, que
+ * es lo que faltaba para saber que la lista y el botón de al lado hablan del mes elegido arriba.
+ */
 @Composable
 fun SectionHeader(
     title: String,
     modifier: Modifier = Modifier,
+    subtitle: String? = null,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
 ) {
@@ -103,18 +109,43 @@ fun SectionHeader(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         if (actionLabel != null && onAction != null) {
             TextButton(onClick = onAction) {
                 Text(actionLabel, style = MaterialTheme.typography.labelMedium)
             }
         }
     }
+}
+
+/**
+ * El bloque para agregar un movimiento. Reemplaza al `+` flotante: el FAB se montaba encima del
+ * último renglón de la lista y había que scrollear para leer lo que tapaba. Acá es una tecla de
+ * ancho completo al final del contenido, que es donde el dedo ya está después de mirar el mes.
+ */
+@Composable
+fun AddMovementButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    WenaButton(
+        text = "+  Agregar movimiento",
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+    )
 }
 
 /**

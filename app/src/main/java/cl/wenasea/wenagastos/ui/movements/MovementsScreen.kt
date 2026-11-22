@@ -22,6 +22,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.common.AddMovementButton
 import cl.wenasea.wenagastos.ui.common.EmptyState
 import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
@@ -32,14 +33,19 @@ import cl.wenasea.wenagastos.ui.home.colorFor
 import cl.wenasea.wenagastos.ui.home.emojiFor
 import cl.wenasea.wenagastos.ui.home.subtitleFor
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
+import java.time.YearMonth
 
 @Composable
 fun MovementsScreen(
     modifier: Modifier = Modifier,
+    /** Mes con el que abre: llega desde «Ver movimientos» en Inicio. */
+    initialMonth: YearMonth? = null,
     onOpenTransaction: (Long) -> Unit = {},
+    onAddMovement: () -> Unit = {},
 ) {
     val container = LocalContainer.current
-    val viewModel: LedgerViewModel = viewModel(factory = VmFactories.ledger(container))
+    val viewModel: LedgerViewModel =
+        viewModel(factory = VmFactories.ledger(container, initialMonth))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     val grouped = remember(state.transactions) {
@@ -55,7 +61,7 @@ fun MovementsScreen(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
     ) {
         item {
             Column(modifier = Modifier.padding(bottom = 8.dp)) {
@@ -162,6 +168,13 @@ fun MovementsScreen(
                     )
                 }
             }
+        }
+
+        item {
+            AddMovementButton(
+                onClick = onAddMovement,
+                modifier = Modifier.padding(top = 24.dp),
+            )
         }
     }
 }

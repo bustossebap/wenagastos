@@ -12,6 +12,7 @@ import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
 import cl.wenasea.wenagastos.ui.reports.ReportsViewModel
 import cl.wenasea.wenagastos.ui.settings.MerchantRulesViewModel
 import cl.wenasea.wenagastos.ui.settings.SettingsViewModel
+import java.time.YearMonth
 
 /** Acceso al contenedor de dependencias desde Compose. */
 val LocalContainer = staticCompositionLocalOf<AppContainer> {
@@ -20,9 +21,18 @@ val LocalContainer = staticCompositionLocalOf<AppContainer> {
 
 object VmFactories {
 
-    fun ledger(container: AppContainer) = viewModelFactory {
+    /**
+     * Inicio y Movimientos usan el mismo ViewModel. [month] llega cuando se entra desde «Ver
+     * movimientos», para que la lista abra en el mes que se estaba mirando.
+     */
+    fun ledger(container: AppContainer, month: YearMonth? = null) = viewModelFactory {
         initializer {
-            LedgerViewModel(container.transactions, container.categories, container.accounts)
+            LedgerViewModel(
+                container.transactions,
+                container.categories,
+                container.accounts,
+                month,
+            )
         }
     }
 

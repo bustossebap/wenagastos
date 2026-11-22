@@ -13,17 +13,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.wenasea.wenagastos.data.local.entity.Institution
+import cl.wenasea.wenagastos.domain.AccountBalance
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.common.BankLogo
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
 import cl.wenasea.wenagastos.ui.common.VmFactories
 
 /**
- * Tarjeta de saldos del inicio: el patrimonio y una fila por banco. Toca «Ver cuentas» para el
- * detalle y para escribir el saldo que el banco muestra hoy.
+ * Tarjeta de saldos del inicio: el patrimonio y **una fila por cuenta**, con el logo del banco.
+ *
+ * Antes agrupaba por banco y solo decía el total de cada uno, que es un número que no sirve para
+ * pagar nada: lo que se necesita saber es cuánto hay en la cuenta de la que se va a girar. El
+ * patrimonio se calcula igual —la suma de los saldos conocidos—, así que tocar un saldo en el
+ * detalle sigue corrigiendo esta tarjeta.
  *
  * Sin ningún saldo escrito igual se muestra: es la única puerta para empezar a anotarlos.
  */
@@ -47,15 +55,7 @@ fun BalancesSummaryCard(
                 onAction = onOpen,
             )
 
-            if (!state.hasBalances) {
-                Text(
-                    text = "Todavía no sabes cuánto tienes. En el detalle puedes escribir el " +
-                        "saldo que muestra el banco: desde ahí se mueve solo con cada movimiento.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 8.dp),
-                )
-            } else {
+            if (state.hasBalances) {
                 Row(
                     modifier = Modifier.padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -72,43 +72,79 @@ fun BalancesSummaryCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+            } else {
+                Text(
+                    text = "Todavía no sabes cuánto tienes. En el detalle puedes escribir el " +
+                        "saldo que muestra el banco: desde ahí se mueve solo con cada movimiento.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
 
-                state.institutions.filter { it.known > 0 }.forEach { group ->
-                    Row(
-                        modifier = Modifier.padding(top = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Text(
-                            text = group.institution.emoji,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            text = group.institution.label,
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = Money.format(group.total),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    }
-                }
-
-                if (state.unknownCount > 0) {
-                    Text(
-                        text = if (state.unknownCount == 1) {
-                            "1 cuenta sin saldo no suma."
-                        } else {
-                            "${state.unknownCount} cuentas sin saldo no suman."
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
+            state.institutions.forEach { group ->
+                group.accounts.forEach { row ->
+                    AccountBalanceLine(
+                        institution = group.institution,
+                        row = row,
                     )
                 }
             }
+
+            val unknown = state.unknownCount
+            if (state.hasBalances && unknown > 0) {
+                Text(
+                    text = if (unknown == 1) {
+                        "1 cuenta sin saldo no suma."
+                    } else {
+                        "$unknown cuentas sin saldo no suman."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 10.dp),
+                )
+            }
         }
+    }
+}
+
+/**
+ * Una cuenta: logo del banco, nombre y saldo. La cuenta archivada ya no llega hasta acá —el
+ * cálculo la filtra— y la que nunca tuvo corte dice «Sin saldo» en gris: un `$0` sería mentira.
+ */
+@Composable
+private fun AccountBalanceLine(
+    institution: Institution,
+    row: AccountBalance,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BankLogo(
+            institution = institution,
+            colorHex = row.account.colorHex,
+            size = 22,
+        )
+        Text(
+            text = row.account.name,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = row.balance?.let(Money::format) ?: "Sin saldo",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = when {
+                row.balance == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                row.balance!! < 0 -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+        )
     }
 }

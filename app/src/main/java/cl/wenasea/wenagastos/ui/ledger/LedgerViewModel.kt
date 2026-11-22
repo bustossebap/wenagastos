@@ -48,9 +48,15 @@ class LedgerViewModel(
     private val transactions: TransactionRepository,
     private val categories: CategoryRepository,
     private val accounts: AccountRepository,
+    /**
+     * Mes con el que abre la pantalla. Inicio y Movimientos comparten este ViewModel, así que
+     * «Ver movimientos» en octubre tiene que abrir Movimientos **en octubre**: sin esto la lista
+     * arrancaba siempre en el mes de hoy y el botón parecía no hacer nada.
+     */
+    initialMonth: YearMonth? = null,
 ) : ViewModel() {
 
-    private val month = MutableStateFlow(Dates.currentMonth())
+    private val month = MutableStateFlow(initialMonth ?: Dates.currentMonth())
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val state: StateFlow<LedgerUiState> = month

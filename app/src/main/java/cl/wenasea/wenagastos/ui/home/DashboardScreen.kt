@@ -28,6 +28,7 @@ import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.ui.balances.BalancesSummaryCard
+import cl.wenasea.wenagastos.ui.common.AddMovementButton
 import cl.wenasea.wenagastos.ui.common.BackupDueCard
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
@@ -48,11 +49,13 @@ import cl.wenasea.wenagastos.ui.common.categoryEmoji
 import cl.wenasea.wenagastos.ui.common.transactionSubtitle
 import cl.wenasea.wenagastos.ui.ledger.LedgerUiState
 import cl.wenasea.wenagastos.ui.ledger.LedgerViewModel
+import java.time.YearMonth
 
 @Composable
 fun DashboardScreen(
     modifier: Modifier = Modifier,
-    onSeeAllMovements: () -> Unit = {},
+    onSeeAllMovements: (YearMonth) -> Unit = {},
+    onAddMovement: () -> Unit = {},
     onOpenTransaction: (Long) -> Unit = {},
     onSeeReports: () -> Unit = {},
     onOpenBalances: () -> Unit = {},
@@ -62,9 +65,21 @@ fun DashboardScreen(
     val viewModel: LedgerViewModel = viewModel(factory = VmFactories.ledger(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
+    // El encabezado de la lista dice de qué mes habla y cuánto se está viendo. Antes decía «Ver
+    // todos» y abría Movimientos en el mes de hoy aunque arriba estuviera otro mes: el botón
+    // parecía no hacer nada.
+    val total = state.transactions.size
+    val shown = total.coerceAtMost(HOME_MOVEMENTS_SHOWN)
+    val movementsSubtitle = when {
+        total == 0 -> Dates.monthLabel(state.month)
+        total == 1 -> "1 movimiento · ${Dates.monthLabel(state.month)}"
+        total <= HOME_MOVEMENTS_SHOWN -> "$total movimientos · ${Dates.monthLabel(state.month)}"
+        else -> "$shown de $total movimientos · ${Dates.monthLabel(state.month)}"
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
@@ -118,7 +133,8 @@ fun DashboardScreen(
                     SectionHeader(title = "En qué se fue la plata")
                     if (state.slices.isEmpty()) {
                         Text(
-                            text = "Aún no hay gastos este mes. Agrega uno con el botón +.",
+                            text = "Aún no hay gastos este mes. Agrega uno con «Agregar " +
+                                "movimiento», al final de la lista.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
@@ -164,8 +180,9 @@ fun DashboardScreen(
         item {
             SectionHeader(
                 title = "Últimos movimientos",
-                actionLabel = if (state.transactions.isEmpty()) null else "Ver todos",
-                onAction = onSeeAllMovements,
+                subtitle = movementsSubtitle,
+                actionLabel = if (state.transactions.isEmpty()) null else "Ver movimientos",
+                onAction = { onSeeAllMovements(state.month) },
             )
         }
 
@@ -178,7 +195,7 @@ fun DashboardScreen(
                 )
             }
         } else {
-            items(state.transactions.take(6), key = { it.id }) { transaction ->
+            items(state.transactions.take(HOME_MOVEMENTS_SHOWN), key = { it.id }) { transaction ->
                 TransactionRow(
                     emoji = state.emojiFor(transaction),
                     emojiColor = state.colorFor(transaction),
@@ -190,8 +207,18 @@ fun DashboardScreen(
                 )
             }
         }
+
+        item {
+            AddMovementButton(
+                onClick = onAddMovement,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
+
+/** Cuántos movimientos se ven en Inicio antes de ir a la lista completa. */
+private const val HOME_MOVEMENTS_SHOWN = 6
 
 internal fun LedgerUiState.emojiFor(transaction: TransactionEntity): String =
     categoryEmoji(transaction, categories)

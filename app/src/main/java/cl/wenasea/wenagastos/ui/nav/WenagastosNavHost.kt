@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,10 +42,16 @@ import cl.wenasea.wenagastos.ui.reports.ReportsScreen
 import cl.wenasea.wenagastos.ui.settings.MerchantRulesScreen
 import cl.wenasea.wenagastos.ui.settings.SettingsScreen
 import cl.wenasea.wenagastos.ui.theme.Wena
+import java.time.YearMonth
 
 object Routes {
     const val HOME = "home"
-    const val MOVEMENTS = "movements"
+
+    /**
+     * Patrón con el mes opcional: la ruta sin argumento (`movements`) también calza, así el tab
+     * funciona igual que el enlace con mes de «Ver movimientos».
+     */
+    const val MOVEMENTS = "movements?month={month}"
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
     const val RULES = "rules"
@@ -56,6 +60,17 @@ object Routes {
     const val EDITOR = "editor?txId={txId}"
 
     fun editor(txId: Long): String = "editor?txId=$txId"
+
+    /** Movimientos en un mes concreto; sin mes, el ViewModel abre en el de hoy. */
+    fun movements(month: YearMonth? = null): String =
+        if (month == null) "movements" else "movements?month=$month"
+
+    /**
+     * Lee el argumento `month` de la ruta. Un texto que no es un mes no tumba la pantalla: se
+     * ignora y Movimientos abre en el mes de hoy, que es el peor error aceptable.
+     */
+    fun monthFrom(raw: String?): YearMonth? =
+        raw?.let { text -> runCatching { YearMonth.parse(text) }.getOrNull() }
 }
 
 private data class Tab(val route: String, val label: String, val emoji: String)
@@ -67,53 +82,49 @@ private val tabs = listOf(
     Tab(Routes.SETTINGS, "Ajustes", "⚙️"),
 )
 
+/** Las cuatro rutas que muestran la barra de abajo y el botón de agregar. */
+private val tabRoutes = tabs.map { it.route }
+
 @Composable
 fun WenagastosNavHost() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showChrome = currentRoute == Routes.HOME ||
-        currentRoute == Routes.MOVEMENTS ||
-        currentRoute == Routes.REPORTS ||
-        currentRoute == Routes.SETTINGS
+    val showChrome = currentRoute in tabRoutes
+
+    /**
+     * El único camino para cambiar de tab, con una excepción que antes no estaba: **Inicio no se
+     * restaura**.
+     *
+     * Con `restoreState` para los cuatro tabs, tocar 🏠 aterrizaba en Movimientos: `saveState`
+     * guardaba el stack que se despejaba y, como Inicio es el destino inicial y no tiene estado
+     * propio que devolver, Navigation restauraba el último stack guardado —el de Movimientos—. Para
+     * Inicio basta con despejar la pila hasta él; los otros tres conservan su scroll y su mes.
+     *
+     * Tocar el tab en el que ya se está no hace nada: antes apilaba una copia de la pantalla y el
+     * botón «atrás» tenía que deshacerla.
+     */
+    fun openTab(route: String) {
+        if (route == currentRoute) return
+        if (route == Routes.HOME) {
+            navController.popBackStack(Routes.HOME, inclusive = false)
+            return
+        }
+        // El tab de Movimientos no lleva mes: al patrón (`movements?month={month}`) se le pasa la
+        // ruta sin argumentos, para no meter las llaves en la URL. Sin mes, el ViewModel abre en
+        // el de hoy.
+        val target = if (route == Routes.MOVEMENTS) Routes.movements() else route
+        navController.navigate(target) {
+            popUpTo(Routes.HOME) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     Scaffold(
         bottomBar = {
             if (showChrome) {
-                WenaNavBar(
-                    currentRoute = currentRoute,
-                    onSelect = { route ->
-                        navController.navigate(route) {
-                            popUpTo(Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-            }
-        },
-        floatingActionButton = {
-            if (showChrome) {
-                // Bloque de color de marca con el texto que manda el manual: crema sobre marino de
-                // día, tinta sobre trigo de noche. Es el `primary` de cada modo, sin inventar nada.
-                FloatingActionButton(
-                    onClick = { navController.navigate(Routes.editor(-1L)) },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    // El FAB de M3 trae 16 dp de radio, que no está en la escala del manual
-                    // (2, 3, 5, 8 y 12). Se queda en 12: bloque, no burbuja.
-                    shape = MaterialTheme.shapes.extraLarge,
-                    // Sin sombra: en el manual los planos se separan con color y borde, no con
-                    // elevación. El bloque de color ya se lee solo sobre el papel.
-                    elevation = FloatingActionButtonDefaults.elevation(
-                        defaultElevation = 0.dp,
-                        pressedElevation = 0.dp,
-                        focusedElevation = 0.dp,
-                        hoveredElevation = 0.dp,
-                    ),
-                ) {
-                    Text("+", fontSize = 28.sp, fontWeight = FontWeight.Medium)
-                }
+                WenaNavBar(currentRoute = currentRoute, onSelect = { route -> openTab(route) })
             }
         },
     ) { innerPadding ->
@@ -124,22 +135,30 @@ fun WenagastosNavHost() {
         ) {
             composable(Routes.HOME) {
                 DashboardScreen(
-                    onSeeAllMovements = { navController.navigate(Routes.MOVEMENTS) },
-                    onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
-                    onSeeReports = { navController.navigate(Routes.REPORTS) },
-                    onOpenBalances = { navController.navigate(Routes.BALANCES) },
-                    onOpenSettings = {
-                        navController.navigate(Routes.SETTINGS) {
-                            popUpTo(Routes.HOME) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                    onSeeAllMovements = { month ->
+                        navController.navigate(Routes.movements(month))
                     },
+                    onAddMovement = { navController.navigate(Routes.editor(-1L)) },
+                    onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
+                    onSeeReports = { openTab(Routes.REPORTS) },
+                    onOpenBalances = { navController.navigate(Routes.BALANCES) },
+                    onOpenSettings = { openTab(Routes.SETTINGS) },
                 )
             }
-            composable(Routes.MOVEMENTS) {
+            composable(
+                route = Routes.MOVEMENTS,
+                arguments = listOf(
+                    navArgument("month") {
+                        type = NavType.StringType
+                        nullable = true
+                        defaultValue = null
+                    },
+                ),
+            ) { entry ->
                 MovementsScreen(
+                    initialMonth = Routes.monthFrom(entry.arguments?.getString("month")),
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
+                    onAddMovement = { navController.navigate(Routes.editor(-1L)) },
                 )
             }
             composable(Routes.REPORTS) {
