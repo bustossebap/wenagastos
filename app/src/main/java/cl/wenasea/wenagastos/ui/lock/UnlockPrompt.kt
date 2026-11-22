@@ -3,7 +3,6 @@ package cl.wenasea.wenagastos.ui.lock
 import android.app.Activity
 import android.app.KeyguardManager
 import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.hardware.biometrics.BiometricManager
 import android.hardware.biometrics.BiometricPrompt
@@ -69,11 +68,4 @@ object UnlockPrompt {
         )
         return true
     }
-}
-
-/** La actividad desde cualquier contexto de Compose (para el diálogo del sistema). */
-fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }

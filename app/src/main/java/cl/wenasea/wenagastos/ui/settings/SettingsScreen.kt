@@ -322,6 +322,10 @@ fun SettingsScreen(
                 }
             }
         }
+
+        item {
+            ThemeCard()
+        }
     }
 
     editTarget?.let { target ->

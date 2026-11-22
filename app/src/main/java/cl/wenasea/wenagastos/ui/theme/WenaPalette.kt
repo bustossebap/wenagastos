@@ -73,8 +73,13 @@ internal val WenaPaletteClara = WenaPalette(
 
 /**
  * Modo oscuro: noche. Aquí se invierte la regla del claro — sobre #1C1E30 los acentos puros
- * sí alcanzan AA (terracota 5.57:1, salvia 6.60:1, trigo 10.72:1), así que el texto de acento
+ * sí alcanzan AA (terracota 5,57:1, salvia 6,60:1, trigo 10,72:1), así que el texto de acento
  * puede usar el color del manual sin oscurecerlo.
+ *
+ * Con una excepción que encontró la auditoría de la etapa 6: los montos de abono y el semáforo
+ * de presupuesto también se leen dentro de tarjetas (#363A5E), donde la salvia pura se queda en
+ * 4,39:1 y la terracota en 3,70:1. Para esos dos papeles el modo oscuro usa sus variantes de
+ * noche (`SalviaNoche`, `TerracotaNoche`), que pasan en las cuatro capas.
  */
 internal val WenaPaletteOscura = WenaPalette(
     fondo = Noche,
@@ -88,14 +93,14 @@ internal val WenaPaletteOscura = WenaPalette(
     salvia = Salvia,
     terracotaTexto = TerracotaNoche,
     trigoTexto = Trigo,
-    salviaTexto = Salvia,
-    abono = Salvia,
+    salviaTexto = SalviaNoche,
+    abono = SalviaNoche,
     cargo = TerracotaNoche,
     esOscuro = true,
     heroFondo = MarinoAlto,
     heroTexto = Crema,
     heroCifra = Trigo,
-    presupuestoOk = Salvia,
+    presupuestoOk = SalviaNoche,
     presupuestoCerca = Trigo,
     presupuestoExcedido = TerracotaNoche,
 )

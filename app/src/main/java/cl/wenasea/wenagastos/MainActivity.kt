@@ -19,7 +19,9 @@ import cl.wenasea.wenagastos.ui.theme.WenagastosTheme
 class MainActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: Context) {
-        super.attachBaseContext(AppLocale.wrap(newBase))
+        // Primero el idioma y después el modo de color: el segundo copia la configuración del
+        // primero, así que el locale no se pierde.
+        super.attachBaseContext(AppAppearance.wrap(AppLocale.wrap(newBase)))
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

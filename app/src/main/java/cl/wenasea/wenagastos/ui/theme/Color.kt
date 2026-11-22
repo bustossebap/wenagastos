@@ -30,15 +30,32 @@ val CremaAlta = Color(0xFFFCFAF0)
 val CremaHonda = Color(0xFFE9E5CE)
 val CremaBorde = Color(0xFFD5D0B8)
 
+// El plano más alto del día: fondo de las teclas apagadas y de los campos. Es el peor caso para el
+// texto gris, así que el par se mide contra este y no contra el papel (PenumbraClara encima).
+val CremaTope = Color(0xFFE2DDC6)  // gris secundario encima: 6,55:1
+
+// --- Texto secundario y bordes: los dos grises de cada modo (auditoría de la etapa 6) ---
+val PenumbraClara = Color(0xFF4B4A3F)  // 7,79:1 crema · 7,05:1 tarjeta · 6,55:1 tope
+val PenumbraNoche = Color(0xFFC9C6B4)  // 9,56:1 noche · 7,31:1 capa 3 · 6,35:1 capa 4
+val BordeClaro = Color(0xFF8A8674)
+val BordeNoche = Color(0xFF75778F)
+
 // --- Acentos entintados: la misma familia, oscurecida hasta pasar AA sobre crema y sobre las
 // tarjetas de papel (CremaHonda #E9E5CE es el plano más oscuro donde va texto) ---
 val TerracotaTinta = Color(0xFF9E4830) // 5.35:1 crema, 4.84:1 tarjeta, 5.02:1 sobre blush
 val SalviaTinta = Color(0xFF436957)    // 5.39:1 crema, 4.88:1 tarjeta, 5.19:1 sobre verde pálido
 val TrigoTinta = Color(0xFF7F5C1C)     // 5.31:1 crema, 4.80:1 tarjeta
 
-// La terracota pura alcanza en oscuro sobre el fondo (5.57:1) pero se queda corta sobre la
-// tarjeta más clara (#2E3150, 4.26:1). Esta variante, apenas más luminosa, pasa en las tres.
-val TerracotaNoche = Color(0xFFE58A70) // 4.91:1 sobre #2E3150, 5.54:1 sobre #262943
+// La terracota pura alcanza en oscuro sobre el fondo (5,57:1) pero se queda corta dentro de una
+// tarjeta: 4,26:1 sobre la capa 3 y 3,70:1 sobre la capa 4. Esta variante, apenas más luminosa,
+// pasa en las cuatro capas de la noche.
+val TerracotaNoche = Color(0xFFEE9A82) // 4,98:1 capa 4, 5,73:1 capa 3, 7,50:1 noche
+
+// La salvia pura pasa sobre el fondo (6,60:1) y sobre la capa 3 (5,05:1), pero no sobre la tarjeta
+// más clara (4,39:1 sobre la capa 4), y los montos de abono sí se leen dentro de tarjetas —el
+// detalle por categoría de Reportes—. Esta variante aclara lo justo para pasar en las cuatro y
+// sigue leyéndose como salvia.
+val SalviaNoche = Color(0xFF8FC9AE) // 5,79:1 capa 4, 6,66:1 capa 3, 8,71:1 noche
 
 // El marino del héroe en modo oscuro: un peldaño por encima de NocheCapa4, porque si no el bloque
 // se confunde con las tarjetas (Marino #383A5B y Capa4 #363A5E tienen la misma luminancia).

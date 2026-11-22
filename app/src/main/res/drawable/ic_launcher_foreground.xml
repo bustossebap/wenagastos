@@ -1,19 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    El icono son tres teclas del manual sobre el marino de la marca: la misma serie de barras del
+    héroe y de Reportes, con la del medio en crema para que la altura no sea lo único que varía.
+    Los cantos llevan un escalón de 2 dp —no son rectángulos perfectos— y la base las apoya como
+    las teclas de un piano. Todo el dibujo cabe en la zona segura de 72 dp del icono adaptativo.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M36,56h8v14h-8z" />
+        android:fillColor="#FFF2CB8D"
+        android:pathData="M34,60h4v-2h6v18h-10z" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M50,46h8v24h-8z" />
+        android:fillColor="#FFF3F0DD"
+        android:pathData="M49,49h4v-2h6v29h-10z" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M64,36h8v34h-8z" />
+        android:fillColor="#FFF2CB8D"
+        android:pathData="M64,38h4v-3h6v41h-10z" />
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M32,72h44v3h-44z" />
+        android:fillColor="#FFF3F0DD"
+        android:pathData="M30,76h48v4h-48z" />
 </vector>

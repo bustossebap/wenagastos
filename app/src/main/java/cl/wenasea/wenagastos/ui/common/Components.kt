@@ -1,11 +1,13 @@
 package cl.wenasea.wenagastos.ui.common
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -13,9 +15,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -179,6 +183,72 @@ fun LedgerRule(modifier: Modifier = Modifier) {
         thickness = 1.dp,
         color = MaterialTheme.colorScheme.outlineVariant,
     )
+}
+
+/**
+ * Nota de papel con una tecla de color al canto: la forma en que la app avisa algo sin teñir la
+ * tarjeta entera.
+ *
+ * Antes los avisos del inicio usaban `errorContainer` y `tertiaryContainer`, dos rosados y verdes
+ * que no están en la paleta y que además hacían del color una atmósfera. Acá el plano es papel
+ * (`surfaceContainerHigh` con borde de 1 dp, igual que las notas del editor y del bloqueo) y el
+ * acento es una barra de 4 dp a la izquierda: relleno, no texto, como manda la regla de la casa.
+ */
+@Composable
+fun WenaNotice(
+    accent: Color,
+    title: String,
+    body: String,
+    modifier: Modifier = Modifier,
+    footnote: String? = null,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    val shape = MaterialTheme.shapes.medium
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    ) {
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(4.dp)
+                    .background(accent),
+            )
+            Column(modifier = Modifier.weight(1f).padding(16.dp)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                if (footnote != null) {
+                    Text(
+                        text = footnote,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+                if (actionLabel != null && onAction != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(onClick = onAction) { Text(actionLabel) }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

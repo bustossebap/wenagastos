@@ -1,18 +1,23 @@
 package cl.wenasea.wenagastos.ui.common
 
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -115,5 +120,75 @@ fun WenaChip(
         contentAlignment = Alignment.Center,
     ) {
         Text(text = text, style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1)
+    }
+}
+
+/**
+ * Interruptor-tecla: la pista es un bloque de 44 × 26 dp con radio de 3 dp —no la píldora de
+ * Material— y el pulgar es una tecla de 20 dp. Apagado es papel con borde; encendido es `primary`
+ * con el pulgar en `onPrimary`, el mismo par que el botón.
+ *
+ * Se dibuja a mano, pero la semántica no: `Modifier.toggleable` con `Role.Switch` deja que un
+ * lector de pantalla anuncie «activado/desactivado», que es la razón por la que la etapa 5 no lo
+ * había tocado. El toque mide 48 dp aunque el dibujo mida 26.
+ *
+ * Los `Checkbox` se quedan como los trae Material: ya son un cuadrado de 2 dp de radio con
+ * `primary` encendido, o sea que no hay píldora que corregir.
+ */
+@Composable
+fun WenaSwitch(
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val track = if (checked) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerHighest
+    }
+    val edge = if (checked) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.outline
+    }
+    val thumb = if (checked) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val alpha = if (enabled) 1f else 0.45f
+    val offset by animateDpAsState(
+        targetValue = if (checked) 18.dp else 0.dp,
+        label = "pulgar",
+    )
+    Box(
+        modifier = modifier
+            .size(width = 48.dp, height = 48.dp)
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 44.dp, height = 26.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(track.copy(alpha = alpha))
+                .border(1.dp, edge.copy(alpha = alpha), RoundedCornerShape(3.dp))
+                .padding(3.dp),
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = offset)
+                    .size(20.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(thumb.copy(alpha = alpha)),
+            )
+        }
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import cl.wenasea.wenagastos.ui.common.WenaButton
+import cl.wenasea.wenagastos.ui.common.findActivity
 import cl.wenasea.wenagastos.ui.theme.Tinta
 import cl.wenasea.wenagastos.ui.theme.Wena
 

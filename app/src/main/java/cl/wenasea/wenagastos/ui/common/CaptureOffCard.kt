@@ -1,15 +1,6 @@
 package cl.wenasea.wenagastos.ui.common
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -18,8 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -31,6 +20,9 @@ import cl.wenasea.wenagastos.capture.NotificationAccess
  *
  * El permiso se activa en Ajustes del sistema, así que se relee al volver a la pantalla
  * (ON_RESUME) y la tarjeta desaparece sin reiniciar la app.
+ *
+ * Va en papel con la tecla de terracota al canto, no en `errorContainer`: el rosado teñía la
+ * tarjeta entera y no era de la paleta.
  */
 @Composable
 fun CaptureOffCard(modifier: Modifier = Modifier) {
@@ -50,34 +42,13 @@ fun CaptureOffCard(modifier: Modifier = Modifier) {
 
     if (enabled) return
 
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = "La captura está apagada",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Text(
-                text = "Los avisos de tus bancos no se están leyendo. Si das acceso a las " +
-                    "notificaciones, las compras se anotan solas.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.padding(top = 4.dp),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(onClick = { context.startActivity(NotificationAccess.settingsIntent()) }) {
-                    Text("Activar")
-                }
-            }
-        }
-    }
+    WenaNotice(
+        accent = MaterialTheme.colorScheme.error,
+        title = "La captura está apagada",
+        body = "Los avisos de tus bancos no se están leyendo. Si das acceso a las " +
+            "notificaciones, las compras se anotan solas.",
+        modifier = modifier,
+        actionLabel = "Activar",
+        onAction = { context.startActivity(NotificationAccess.settingsIntent()) },
+    )
 }

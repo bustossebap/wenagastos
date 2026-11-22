@@ -23,7 +23,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -52,6 +51,7 @@ import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
 import cl.wenasea.wenagastos.ui.common.WenaButton
 import cl.wenasea.wenagastos.ui.common.WenaChip
+import cl.wenasea.wenagastos.ui.common.WenaSwitch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -227,7 +227,7 @@ fun TransactionEditorScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(
+            WenaSwitch(
                 checked = isTransfer,
                 onCheckedChange = { checked ->
                     isTransfer = checked

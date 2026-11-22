@@ -60,12 +60,31 @@ Por eso en oscuro el acento de marca (`primary`) es **trigo sobre tinta** — pa
 manual sanciona en la página de interacción cromática — y el marino deja de ser acento para
 quedar sólo como fondo.
 
-> La terracota pura se queda en 4,26:1 sobre la tarjeta más clara (`#2E3150`). Para texto de
-> cargo en oscuro se usa `#E58A70` (4,91:1), que `Color.kt` guarda como `TerracotaNoche`.
+> En oscuro los acentos puros solo alcanzan AA sobre el fondo: la terracota baja de 5,57:1 sobre la
+> noche a 4,26:1 sobre la capa 3 y 3,70:1 sobre la tarjeta más clara (`#363A5E`), y la salvia de
+> 6,60:1 a 4,39:1 sobre esa misma tarjeta. Como los montos de abono se leen dentro de tarjetas
+> —el detalle por categoría de Reportes— y el semáforo de presupuesto vive en una tarjeta de Inicio
+> y otra de Reportes, la auditoría de la etapa 6 cambió los dos papeles: el cargo usa
+> `TerracotaNoche #EE9A82` (4,98:1 sobre la capa 4) y el abono y el semáforo `SalviaNoche #8FC9AE`
+> (5,79:1), dos variantes que pasan en las cuatro capas de la noche.
 
 > El héroe de Inicio necesita un marino que se despegue de las tarjetas, y `#383A5B` tiene la
 > misma luminancia que `#363A5E`. En oscuro el bloque usa **`MarinoAlto #4A4E78`** (crema encima
 > 6,93:1, trigo 5,16:1); en claro usa el Marino del manual sin cambios (crema 9,52:1).
+
+### Quién elige el modo
+
+Automático es el de fábrica: la app sigue al teléfono. Abajo de todo en Ajustes hay tres teclas
+—**Automático / Claro / Oscuro**— para forzarlo, y la elección se guarda en `SharedPreferences`
+(`Prefs.themeKey`), no en el respaldo: es de la instalación, como el bloqueo.
+
+La preferencia no se pasa a mano a Compose. Se aplica en `attachBaseContext` (`AppAppearance.kt`),
+que sobreescribe el bit de noche del contexto base igual que `AppLocale` sobreescribe el idioma.
+Así una sola decisión alcanza a todo lo que mira la configuración —`isSystemInDarkTheme()`, los
+recursos `values-night` que pintan la ventana en el arranque en frío y el color de los íconos de la
+barra de estado que instala `enableEdgeToEdge()`— y no hay forma de que el tema de Compose y el
+del sistema queden en desacuerdo. El costo es honesto: al cambiar de modo la actividad se vuelve a
+crear una vez, como cuando Android cambia el tema del sistema.
 
 **Los papeles de Material se conservan entre modos** para que nada cambie de significado al
 cambiar de tema:
@@ -157,7 +176,11 @@ Los cuatro gestos que hacen reconocible la app sin el logo del manual:
    con el pill de Material. Desde la etapa 5 lo que se toca también es tecla: `WenaButton` y
    `WenaChip` (`ui/common/Keys.kt`) reemplazan la píldora de `Button` y el chip rosado de Material
    por un bloque de 5 dp de radio —apagado con borde, pisado con `primary`—, y el FAB bajó de los
-   16 dp que trae Material 3 a los 12 dp de la escala.
+   16 dp que trae Material 3 a los 12 dp de la escala. La etapa 6 sumó `WenaSwitch`: la píldora de
+   32 dp del interruptor es ahora una pista de 44 × 26 dp con radio de 3 dp y un pulgar cuadrado,
+   dibujada a mano pero con `Modifier.toggleable` y `Role.Switch` debajo para que el lector de
+   pantalla siga anunciando «activado/desactivado». Los `Checkbox` no se tocaron: ya son cuadrados
+   de 2 dp de radio encendidos en `primary`, o sea que estaban dentro de la regla.
 2. **Borde rasgado.** Una sola vez, en el borde superior del bloque del héroe de Inicio, como las
    bandas de la portada. `Path` con una decena de curvas cortas, 7 dp de amplitud y un perfil fijo
    —no aleatorio— para que no cambie de forma entre recomposiciones (`HeroBlock.kt`).
@@ -165,7 +188,9 @@ Los cuatro gestos que hacen reconocible la app sin el logo del manual:
    categorías de Ajustes— se separan con una regla de 1 dp en `outlineVariant` (`LedgerRule`), no
    con una tarjeta por fila ni con sombras. La hoja se lee como el libro de cuentas que la app es.
 4. **Bloques de color con el texto que manda el manual.** Un badge sobre marino lleva crema; sobre
-   trigo, tinta. Nunca al revés.
+   trigo, tinta. Nunca al revés. Los avisos del inicio (`WenaNotice`) llevan el acento como una
+   tecla de 4 dp al canto sobre papel, no como fondo teñido: teñir la tarjeta entera es la
+   "atmósfera" que la regla de uso prohíbe.
 
 Lo que **no** se trae: la mascota (es música), la textura de papel (ensucia la lectura de cifras y
 envejece mal en pantalla), el imagotipo `solbemol` (marca distinta) y todo lo de imprenta (CMYK,
@@ -182,12 +207,15 @@ papeles, área de resguardo).
 | `ui/theme/WenaPalette.kt` | `WenaPalette` y `Wena.paleta`: acentos y colores de dinero por modo |
 | `ui/theme/Type.kt` | familias, escala tipográfica, `Vg5000` y `HeroAmount` |
 | `ui/theme/Shape.kt` | escala de radios |
+| `AppAppearance.kt` | `ThemeMode` y el `uiMode` forzado en el contexto base (tema claro/oscuro) |
 | `ui/nav/WenagastosNavHost.kt` | barra con tecla pisada (`WenaNavBar`, `WenaTab`) y FAB de marca a 12 dp |
 | `ui/common/HeroBlock.kt` | bloque del héroe y `TornTopEdge` (borde rasgado) |
-| `ui/common/Keys.kt` | `WenaButton` y `WenaChip`: lo que se toca, dibujado como tecla |
-| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `LedgerRule`, `EmptyState` |
+| `ui/common/Keys.kt` | `WenaButton`, `WenaChip` y `WenaSwitch`: lo que se toca, dibujado como tecla |
+| `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `LedgerRule`, `WenaNotice`, `EmptyState` |
 | `ui/common/BudgetComponents.kt` | semáforo de presupuesto: `budgetColor()` desde `Wena.paleta` y `BudgetProgress` |
 | `ui/reports/Charts.kt` | `MonthlyBars` (serie de seis meses) y `CategoryStack` (barra-tecla apilada de partes), dibujados a mano |
+| `ui/settings/ThemeCard.kt` | las tres teclas de tema al final de Ajustes |
+| `res/drawable/ic_launcher_foreground.xml` | el icono: tres teclas sobre el marino de la marca |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
 | `res/values-night/colors.xml` | arranque en noche |
 | `res/font/` | Instrument Sans 400/600/700, VG5000 |
@@ -212,13 +240,19 @@ marino ni un segundo trigo.
 | 3 | Inicio: héroe con borde rasgado y monto en VG5000 | ✅ |
 | 4 | Reportes: barras-tecla y paleta de acento | ✅ héroe, barras-tecla, leyenda, semáforo y categorías |
 | 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | ✅ teclas para tocar, renglones rayados, patrimonio en bloque de marca y portada de bloqueo |
-| 6 | Auditoría de contraste en dispositivo + capturas antes/después | pendiente |
+| 6 | Auditoría de contraste en dispositivo + capturas antes/después | ✅ dos defectos corregidos en oscuro, `WenaSwitch`, notas de Inicio en papel, icono de teclas y tema claro/oscuro en Ajustes |
 
 ## 7. Pendientes conocidos
 
+- **Auditoría de contraste:** cerrada en la etapa 6. `ContrastTest` mide con la fórmula de WCAG
+  2.1 los pares que la app pinta de verdad, en claro y en oscuro, y falla si un token se sale de
+  AA. La revisión en el emulador (1080 × 2400, tema claro y oscuro) encontró dos defectos que el
+  test ahora cuida: el abono y el semáforo de presupuesto se leían dentro de tarjetas con 4,39:1 y
+  3,70:1. `SalviaNoche` y el nuevo `TerracotaNoche` los dejan en 5,79:1 y 4,98:1.
 - **Avatares de categoría:** resuelto en la etapa 2 — tecla cuadrada con tinte al 22 % y borde al
-  55 % del color elegido, que sobre crema sí define la forma. Queda por revisar, si algún color de
-  usuario es muy claro, el emoji encima (etapa 6, auditoría en dispositivo).
+  55 % del color elegido, que sobre crema sí define la forma. La auditoría de la etapa 6 revisó el
+  emoji encima con los colores más claros de la paleta: el emoji no es texto (trae sus propios
+  colores) y el borde mantiene la forma, así que no hizo falta cambiarlo.
 - **Gráfico de partes de Reportes:** resuelto en la etapa 4 — la dona salió y entró una barra-tecla
   apilada de 20 dp con 2 dp de papel entre tramos. Una dona solo se lee con pocas rebanadas y el
   manual no tiene curvas; con quince categorías se volvía confeti. La barra muestra las cinco que
@@ -226,16 +260,10 @@ marino ni un segundo trigo.
   tecla es de una categoría y el agregado no tiene color propio. El detalle completo sigue abajo,
   categoría por categoría, con sus montos y sus movimientos.
 - **Logotipo de Wenagastos:** no existe. Idea anotada, no comprometida: un glifo de barras que se
-  lea a la vez como teclas de piano y como barras de gráfico.
-- **Controles de plataforma (etapa 5):** los interruptores y las casillas de Ajustes y del editor
-  siguen siendo `Switch` y `Checkbox` de Material. Se dejaron a propósito: son la única forma de que
-  un lector de pantalla anuncie «activado/desactivado» sin inventar semántica. Queda para la etapa 6
-  decidir si la pista del interruptor —una píldora de 32 dp— se redibuja como tecla o si se asume
-  como control del sistema.
-- **Notas teñidas de Inicio (etapa 5):** `CaptureOffCard` y `BackupDueCard` siguen usando
-  `errorContainer` y `tertiaryContainer`, dos rosados y verdes que no están en la paleta. En el
-  editor y en el bloqueo las notas ya pasaron a papel (`surfaceContainerHigh` con borde de 1 dp);
-  falta decidir si las de Inicio se quedan teñidas —porque avisan— o siguen la misma regla.
-- **Icono de la app:** hoy son barras blancas sobre teal (`#0F766E`); el fondo ya pasó a marino,
-  el dibujo de las barras se puede rehacer como teclas en la etapa 6.
+  lea a la vez como teclas de piano y como barras de gráfico. El icono de la app ya va en esa
+  dirección (tres teclas sobre marino), pero un icono no es un logotipo.
+- **Arranque en frío:** la apertura de SQLCipher tiene los ojos en blanco entre 1,3 y 1,9 s en el
+  emulador. Candidato para una etapa propia: una portada de papel con las teclas del icono mientras
+  la base abre, en vez de la ventana vacía.
+- **Otras etapas:** ninguna abierta. Lo que sigue es producto, no sistema visual.
 
