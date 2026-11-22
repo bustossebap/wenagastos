@@ -46,6 +46,7 @@ object VmFactories {
                 container.captureLogs,
                 container.backup,
                 container.files,
+                container.backupStamp,
             )
         }
     }
@@ -64,7 +65,7 @@ object VmFactories {
 
     fun captureDiagnostics(container: AppContainer) = viewModelFactory {
         initializer {
-            CaptureDiagnosticsViewModel(container.captureLogs)
+            CaptureDiagnosticsViewModel(container.captureLogs, container.apps)
         }
     }
 }

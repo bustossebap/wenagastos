@@ -1,5 +1,7 @@
 package cl.wenasea.wenagastos.ui.capture
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,14 +17,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.wenasea.wenagastos.capture.AppSettings
+import cl.wenasea.wenagastos.capture.SourceRow
+import cl.wenasea.wenagastos.capture.SourceState
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.domain.Dates
@@ -40,6 +51,18 @@ fun CaptureDiagnosticsScreen(
     val viewModel: CaptureDiagnosticsViewModel =
         viewModel(factory = VmFactories.captureDiagnostics(container))
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val sources by viewModel.sources.collectAsStateWithLifecycle()
+
+    // El permiso de notificaciones de un banco se cambia en Ajustes del sistema: al volver, la
+    // lista de apps se relee sola y la fila deja de decir "Notificaciones apagadas".
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refresh()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -76,6 +99,10 @@ fun CaptureDiagnosticsScreen(
             }
         }
 
+        if (sources.isNotEmpty()) {
+            item { SourcesCard(sources) }
+        }
+
         if (entries.isEmpty()) {
             item {
                 EmptyState(
@@ -89,6 +116,90 @@ fun CaptureDiagnosticsScreen(
         items(entries, key = { it.id }) { entry ->
             CaptureLogCard(entry)
         }
+    }
+}
+
+/**
+ * Estado real de las apps de los bancos en este teléfono. Es lo primero que hay que mirar cuando
+ * un movimiento no aparece: el retiro de Falabella se perdió porque la app del banco estaba
+ * instalada como `cl.android` y la de la tienda estaba deshabilitada, y nada de eso se veía.
+ */
+@Composable
+private fun SourcesCard(sources: List<SourceRow>) {
+    val context = LocalContext.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Text(
+                text = "Apps de los bancos",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                text = "Si un aviso no llega, la causa casi siempre está en esta lista: la app no " +
+                    "está instalada, está deshabilitada o tiene las notificaciones apagadas. " +
+                    "MACH no tiene app: sus avisos llegan por correo.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+
+            sources.forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = row.source.label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            text = row.source.packages.joinToString(", "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = row.state.label,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = row.state.color(),
+                        )
+                        row.installedPackage?.let { packageName ->
+                            TextButton(
+                                onClick = { openAppSettings(context, packageName) },
+                                contentPadding = PaddingValues(horizontal = 8.dp),
+                            ) {
+                                Text("Ajustes", fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceState.color(): Color = when (this) {
+    SourceState.READY -> MaterialTheme.colorScheme.primary
+    // No instalada no es un problema: quizá ese banco no se usa. Apagada sí lo es.
+    SourceState.NOT_INSTALLED -> MaterialTheme.colorScheme.onSurfaceVariant
+    SourceState.DISABLED, SourceState.MUTED -> MaterialTheme.colorScheme.error
+}
+
+/** La pantalla de notificaciones de la app; si el teléfono no la tiene, la ficha de la app. */
+private fun openAppSettings(context: Context, packageName: String) {
+    try {
+        context.startActivity(AppSettings.notifications(packageName))
+    } catch (error: ActivityNotFoundException) {
+        context.startActivity(AppSettings.details(packageName))
     }
 }
 

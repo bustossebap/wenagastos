@@ -28,6 +28,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.ui.common.BackupDueCard
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
 import cl.wenasea.wenagastos.ui.common.CaptureOffCard
 import cl.wenasea.wenagastos.ui.common.CategoryAvatar
@@ -53,6 +54,7 @@ fun DashboardScreen(
     onSeeAllMovements: () -> Unit = {},
     onOpenTransaction: (Long) -> Unit = {},
     onSeeReports: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val container = LocalContainer.current
     val viewModel: LedgerViewModel = viewModel(factory = VmFactories.ledger(container))
@@ -79,6 +81,8 @@ fun DashboardScreen(
         }
 
         item { CaptureOffCard() }
+
+        item { BackupDueCard(onOpenSettings = onOpenSettings) }
 
         item {
             MonthSwitcher(

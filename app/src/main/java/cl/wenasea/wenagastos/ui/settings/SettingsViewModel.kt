@@ -3,6 +3,7 @@ package cl.wenasea.wenagastos.ui.settings
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import cl.wenasea.wenagastos.data.local.BackupStamp
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
@@ -61,6 +62,7 @@ class SettingsViewModel(
     captureLogs: CaptureLogRepository,
     private val backup: BackupRepository,
     private val files: DocumentFiles,
+    private val stamp: BackupStamp,
 ) : ViewModel() {
 
     private val local = MutableStateFlow(SettingsUiState())
@@ -246,6 +248,8 @@ class SettingsViewModel(
                 // La contraseña no se queda en memoria más de lo necesario.
                 chars.fill('\u0000')
             }
+            // El archivo quedó escrito: recién acá corre el plazo del recordatorio del inicio.
+            stamp.mark()
             "Respaldo listo con ${plural(data.transactions.size, "movimiento", "movimientos")}. " +
                 "Guárdalo fuera del teléfono: sin la contraseña no hay forma de abrirlo."
         }

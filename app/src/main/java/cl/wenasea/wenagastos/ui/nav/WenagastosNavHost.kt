@@ -95,6 +95,13 @@ fun WenagastosNavHost() {
                     onSeeAllMovements = { navController.navigate(Routes.MOVEMENTS) },
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
                     onSeeReports = { navController.navigate(Routes.REPORTS) },
+                    onOpenSettings = {
+                        navController.navigate(Routes.SETTINGS) {
+                            popUpTo(Routes.HOME) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                 )
             }
             composable(Routes.MOVEMENTS) {

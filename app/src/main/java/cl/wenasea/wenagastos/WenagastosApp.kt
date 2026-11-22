@@ -3,8 +3,10 @@ package cl.wenasea.wenagastos
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
+import cl.wenasea.wenagastos.capture.AppLookup
 import cl.wenasea.wenagastos.capture.CaptureEngine
 import cl.wenasea.wenagastos.data.Seeder
+import cl.wenasea.wenagastos.data.local.BackupStamp
 import cl.wenasea.wenagastos.data.local.DbEncryption
 import cl.wenasea.wenagastos.data.local.DbKey
 import cl.wenasea.wenagastos.data.local.WenagastosDatabase
@@ -106,6 +108,12 @@ class AppContainer(application: Application) {
 
     /** Escribe y lee el archivo que el usuario elige en el selector del sistema. */
     val files = DocumentFiles(application.contentResolver)
+
+    /** Qué dice el sistema de cada app de banco: instalada, habilitada y con avisos. */
+    val apps by lazy { AppLookup(application) }
+
+    /** Fecha del último respaldo, para el recordatorio del inicio. */
+    val backupStamp by lazy { BackupStamp(application) }
 
     /** Bloqueo al abrir: estado en memoria, valor inicial en `SharedPreferences`. */
     val appLock = AppLockState(application)
