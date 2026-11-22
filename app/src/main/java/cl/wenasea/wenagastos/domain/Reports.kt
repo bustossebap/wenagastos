@@ -40,6 +40,16 @@ data class CategoryTotal(
 )
 
 /**
+ * El recorte de un gráfico de partes: las categorías que más gastan ([head]) y lo que suma el
+ * resto ([restShare], con [restCount] categorías). Quince rebanadas son confeti; cinco se leen.
+ */
+data class CategoryTop(
+    val head: List<CategoryTotal>,
+    val restShare: Float,
+    val restCount: Int,
+)
+
+/**
  * Los números de Reportes y presupuestos. Todo se calcula desde la lista de movimientos del mes,
  * así Reportes, Inicio y las alertas nunca dicen cosas distintas.
  *
@@ -103,6 +113,20 @@ object Reports {
                 )
             }
             .sortedByDescending { it.spent }
+    }
+
+    /**
+     * Las [limit] categorías que más gastan y la parte que suman las demás. La lista ya viene de
+     * mayor a menor desde [byCategory], así que "las que más" es simplemente el comienzo.
+     */
+    fun topCategories(totals: List<CategoryTotal>, limit: Int = 5): CategoryTop {
+        val head = totals.take(limit.coerceAtLeast(0))
+        val rest = totals.drop(head.size)
+        return CategoryTop(
+            head = head,
+            restShare = rest.sumOf { it.share.toDouble() }.toFloat(),
+            restCount = rest.size,
+        )
     }
 
     /**

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -164,7 +163,11 @@ fun ReportsScreen(
 }
 
 
-/** Dona + leyenda + detalle: tocar una categoría abre sus movimientos del mes. */
+/**
+ * Barra de partes + leyenda + detalle: tocar una categoría abre sus movimientos del mes. La barra
+ * enseña el reparto de un vistazo, la leyenda pone los porcentajes y el detalle deja bajar al
+ * movimiento.
+ */
 @Composable
 private fun CategoriesCard(
     state: ReportsUiState,
@@ -187,21 +190,26 @@ private fun CategoriesCard(
                 return@Column
             }
 
+            // Cinco tramos y el resto sumado: con quince categorías la lectura de partes deja de
+            // informar. El detalle completo sigue abajo, categoría por categoría.
+            val top = Reports.topCategories(state.categories)
+            val otras = MaterialTheme.colorScheme.outline
             Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                CategoryDonut(
-                    slices = state.categories.map { total ->
-                        (total.category?.colorHex?.asColor() ?: Color.Gray) to total.share
-                    },
-                    centerValue = Money.formatCompact(state.expenses),
-                    centerCaption = "en ${Dates.shortMonthLabel(state.month)}",
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    state.categories.take(5).forEach { total ->
-                        DonutLegendRow(total)
+            CategoryStack(
+                slices = buildList {
+                    top.head.forEach { total ->
+                        add((total.category?.colorHex?.asColor() ?: Color.Gray) to total.share)
                     }
-                }
+                    if (top.restCount > 0) add(otras to top.restShare)
+                },
+            )
+            Spacer(Modifier.height(10.dp))
+            top.head.forEach { total -> CategoryLegendRow(total) }
+            if (top.restCount > 0) {
+                OtherCategoriesRow(
+                    label = otherCategoriesLabel(top.restCount),
+                    share = top.restShare,
+                )
             }
 
             Spacer(Modifier.height(12.dp))
@@ -228,8 +236,24 @@ private fun CategoriesCard(
 }
 
 @Composable
-private fun DonutLegendRow(total: CategoryTotal) {
-    val color = total.category?.colorHex?.asColor() ?: Color.Gray
+private fun CategoryLegendRow(total: CategoryTotal) {
+    CategoryLegendRow(
+        label = total.category?.name ?: "Sin categoría",
+        color = total.category?.colorHex?.asColor() ?: Color.Gray,
+        share = total.share,
+    )
+}
+
+/**
+ * Una fila de la leyenda: tecla cuadrada del color, nombre y el porcentaje a la derecha. La misma
+ * forma sirve para una categoría y para el agregado de las que no caben en el gráfico.
+ */
+@Composable
+private fun CategoryLegendRow(
+    label: String,
+    color: Color,
+    share: Float,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -244,14 +268,49 @@ private fun DonutLegendRow(total: CategoryTotal) {
                 .background(color),
         )
         Text(
-            text = total.category?.name ?: "Sin categoría",
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = "${(total.share * 100).roundToInt()}%",
+            text = "${(share * 100).roundToInt()}%",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** "Otras 7 categorías" / "Otra categoría": el agregado que no cabe en el gráfico. */
+private fun otherCategoriesLabel(count: Int): String =
+    if (count == 1) "Otra categoría" else "Otras $count categorías"
+
+/**
+ * La nota al pie de la leyenda. No lleva tecla: la tecla es de una categoría, y esto son las que
+ * quedaron fuera del gráfico, sin un color que las represente.
+ */
+@Composable
+private fun OtherCategoriesRow(
+    label: String,
+    share: Float,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 14.dp, top = 3.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "${(share * 100).roundToInt()}%",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

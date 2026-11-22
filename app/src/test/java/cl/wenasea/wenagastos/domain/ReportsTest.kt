@@ -74,6 +74,48 @@ class ReportsTest {
     }
 
     @Test
+    fun `el grafico de partes se queda con las cinco que mas gastan y suma las demas`() {
+        val totals = (1L..8L).map { id ->
+            val parte = (9 - id)
+            CategoryTotal(
+                category = category(id, "C$id"),
+                spent = parte * 10L,
+                share = parte / 36f,
+                budget = null,
+            )
+        }
+
+        val top = Reports.topCategories(totals)
+
+        assertEquals(5, top.head.size)
+        assertEquals(
+            listOf("C1", "C2", "C3", "C4", "C5"),
+            top.head.map { it.category?.name },
+        )
+        assertEquals(3, top.restCount)
+        assertEquals(6f / 36f, top.restShare, 0.001f)
+        assertEquals(
+            1f,
+            top.head.sumOf { it.share.toDouble() }.toFloat() + top.restShare,
+            0.001f,
+        )
+    }
+
+    @Test
+    fun `sin categorias que sumar el agregado queda vacio`() {
+        val totals = Reports.byCategory(
+            listOf(tx(30_000L, categoryId = 1L), tx(10_000L, categoryId = 2L)),
+            listOf(category(1L, "Supermercado"), category(2L, "Bencina")),
+        )
+
+        val top = Reports.topCategories(totals)
+
+        assertEquals(2, top.head.size)
+        assertEquals(0, top.restCount)
+        assertEquals(0f, top.restShare, 0.001f)
+    }
+
+    @Test
     fun `sin presupuesto no hay estado`() {
         assertNull(Reports.budgetStatus(10_000L, null))
         assertNull(Reports.budgetStatus(10_000L, 0L))

@@ -151,9 +151,10 @@ cambiar de tema:
 Los tres gestos que hacen reconocible la app sin el logo del manual:
 
 1. **Teclas.** El módulo gráfico del manual son barras verticales y horizontales, "rectas pero con
-   trazo orgánico". En la app: las barras de `Charts.kt` y de `ShareBar` se dibujan como teclas
-   (alturas distintas, separación fina, borde levemente irregular) y el tab activo de la barra de
-   navegación se marca con una tecla pisada, no con el pill de Material.
+   trazo orgánico". En la app: las barras de `Charts.kt` (la serie mensual y la barra apilada de
+   categorías) y `ShareBar` se dibujan como teclas (alturas distintas, separación fina, borde
+   levemente irregular) y el tab activo de la barra de navegación se marca con una tecla pisada, no
+   con el pill de Material.
 2. **Borde rasgado.** Una sola vez, en el borde superior del bloque del héroe de Inicio, como las
    bandas de la portada. `Path` con una decena de curvas cortas, 7 dp de amplitud y un perfil fijo
    —no aleatorio— para que no cambie de forma entre recomposiciones (`HeroBlock.kt`).
@@ -179,6 +180,7 @@ papeles, área de resguardo).
 | `ui/common/HeroBlock.kt` | bloque del héroe y `TornTopEdge` (borde rasgado) |
 | `ui/common/Components.kt` | piezas compartidas: `MonthSwitcher` con teclas, `SectionHeader`, `TransactionRow`, `CategoryAvatar` y `ShareBar` como teclas, `EmptyState` |
 | `ui/common/BudgetComponents.kt` | semáforo de presupuesto: `budgetColor()` desde `Wena.paleta` y `BudgetProgress` |
+| `ui/reports/Charts.kt` | `MonthlyBars` (serie de seis meses) y `CategoryStack` (barra-tecla apilada de partes), dibujados a mano |
 | `res/values/colors.xml` | arranque en crema; icono sobre marino |
 | `res/values-night/colors.xml` | arranque en noche |
 | `res/font/` | Instrument Sans 400/600/700, VG5000 |
@@ -199,7 +201,7 @@ héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
 | 1 | Tokens: color, tipografía, formas, fuentes, arranque | ✅ |
 | 2 | Chrome: barra de navegación con tecla activa, FAB, componentes comunes | ✅ |
 | 3 | Inicio: héroe con borde rasgado y monto en VG5000 | ✅ |
-| 4 | Reportes: barras-tecla y paleta de acento | 🔶 héroe, barras-tecla, leyenda y semáforo hechos; dona y lista de categorías, pendientes |
+| 4 | Reportes: barras-tecla y paleta de acento | ✅ héroe, barras-tecla, leyenda, semáforo y categorías |
 | 5 | Resto: Movimientos, Balances, Ajustes, Editor, Bloqueo | pendiente |
 | 6 | Auditoría de contraste en dispositivo + capturas antes/después | pendiente |
 
@@ -208,9 +210,12 @@ héroe (`heroFondo`, `heroTexto`, `heroCifra`) y el semáforo de presupuesto
 - **Avatares de categoría:** resuelto en la etapa 2 — tecla cuadrada con tinte al 22 % y borde al
   55 % del color elegido, que sobre crema sí define la forma. Queda por revisar, si algún color de
   usuario es muy claro, el emoji encima (etapa 6, auditoría en dispositivo).
-- **Dona de Reportes:** sigue siendo un anillo curvo con los colores de categoría. Es la única curva
-  grande que queda en la app y el manual no tiene curvas; en la etapa 4 hay que decidir si se
-  reemplaza por una barra-tecla apilada o se deja como la excepción declarada.
+- **Gráfico de partes de Reportes:** resuelto en la etapa 4 — la dona salió y entró una barra-tecla
+  apilada de 20 dp con 2 dp de papel entre tramos. Una dona solo se lee con pocas rebanadas y el
+  manual no tiene curvas; con quince categorías se volvía confeti. La barra muestra las cinco que
+  más gastan y suma el resto en un tramo neutro (`outline`), que en la leyenda no lleva tecla: la
+  tecla es de una categoría y el agregado no tiene color propio. El detalle completo sigue abajo,
+  categoría por categoría, con sus montos y sus movimientos.
 - **Logotipo de Wenagastos:** no existe. Idea anotada, no comprometida: un glifo de barras que se
   lea a la vez como teclas de piano y como barras de gráfico.
 - **Icono de la app:** hoy son barras blancas sobre teal (`#0F766E`); el fondo ya pasó a marino,

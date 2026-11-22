@@ -2,6 +2,7 @@ package cl.wenasea.wenagastos.ui.reports
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -23,9 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.MonthPoint
@@ -34,58 +32,46 @@ import java.time.YearMonth
 import kotlin.math.max
 
 /**
- * Dona de gastos por categoría, dibujada a mano: no hace falta ninguna librería de gráficos.
- * [slices] viene como color + parte (0..1) en el mismo orden que la leyenda.
+ * Barra-tecla apilada: cada categoría ocupa un tramo recto y entre tramos queda papel. Es la
+ * lectura de partes del informe sin curvas — una dona con quince categorías es confeti, y el
+ * manual no tiene curvas. [slices] viene como color + parte (0..1) en el mismo orden que la
+ * leyenda, que es la lista ordenada de mayor a menor gasto.
  */
 @Composable
-fun CategoryDonut(
+fun CategoryStack(
     slices: List<Pair<Color, Float>>,
-    centerValue: String,
-    centerCaption: String,
     modifier: Modifier = Modifier,
 ) {
-    val track = MaterialTheme.colorScheme.surfaceVariant
-    Box(modifier = modifier.size(164.dp), contentAlignment = Alignment.Center) {
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val stroke = 20.dp.toPx()
-            val inset = stroke / 2f
-            val arc = Size(size.width - stroke, size.height - stroke)
-            drawArc(
-                color = track,
-                startAngle = 0f,
-                sweepAngle = 360f,
-                useCenter = false,
-                topLeft = Offset(inset, inset),
-                size = arc,
-                style = Stroke(stroke),
-            )
-            var start = -90f
-            slices.filter { it.second > 0f }.forEach { (color, share) ->
-                val sweep = share * 360f
-                drawArc(
+    val track = MaterialTheme.colorScheme.surfaceContainerHighest
+    val shape = RoundedCornerShape(2.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(20.dp)
+            .clip(shape)
+            .background(track)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(1.dp)) {
+            val gap = 2.dp.toPx()
+            val minimo = 2.dp.toPx()
+            val tramos = slices.filter { it.second > 0f }
+            // Los huecos también ocupan ancho: se descuentan antes de repartir las partes, si no el
+            // último tramo se sale de la barra y desaparece.
+            val ancho = (size.width - gap * (tramos.size - 1).coerceAtLeast(0)).coerceAtLeast(0f)
+            var left = 0f
+            tramos.forEach { (color, share) ->
+                val tramo = (ancho * share)
+                    .coerceAtLeast(minimo)
+                    .coerceAtMost(size.width - left)
+                if (tramo <= 0f) return@forEach
+                drawRect(
                     color = color,
-                    startAngle = start,
-                    sweepAngle = sweep,
-                    useCenter = false,
-                    topLeft = Offset(inset, inset),
-                    size = arc,
-                    style = Stroke(stroke),
+                    topLeft = Offset(left, 0f),
+                    size = Size(tramo, size.height),
                 )
-                start += sweep
+                left += tramo + gap
             }
-        }
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = centerValue,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                text = centerCaption,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
