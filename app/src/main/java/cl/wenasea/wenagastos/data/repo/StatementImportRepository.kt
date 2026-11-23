@@ -68,6 +68,32 @@ data class StatementReport(
 }
 
 /**
+ * Lo que quedó al deshacer una importación: cuántos movimientos se borraron, cuántos se dejaron
+ * porque el usuario los había revisado, y si el corte de saldo de esa cartola también se olvidó.
+ */
+data class UndoReport(
+    val removed: Int,
+    /** Los que se quedan: la cartola los anotó, pero después alguien los corrigió. */
+    val kept: Int,
+    val balanceForgotten: Boolean,
+) {
+
+    fun describe(): String = buildString {
+        when {
+            removed == 0 -> append("No borré ningún movimiento.")
+            removed == 1 -> append("Borré 1 movimiento de la última cartola.")
+            else -> append("Borré $removed movimientos de la última cartola.")
+        }
+        if (kept > 0) {
+            append(" ")
+            append(if (kept == 1) "Dejé 1 que revisaste" else "Dejé $kept que revisaste")
+            append(": eso ya no es lo que decía el archivo.")
+        }
+        append(if (balanceForgotten) " También olvidé el saldo de cierre que traía." else "")
+    }
+}
+
+/**
  * Escribe en la base lo que [StatementImport] leyó de la cartola.
  *
  * Tres reglas, todas para que importar dos veces el mismo mes no ensucie nada:
@@ -231,10 +257,52 @@ class StatementImportRepository(
         )
     }
 
+    /**
+     * Deshace la última cartola importada: borra los movimientos que anotó y olvida el corte de
+     * saldo que dejó, todo dentro de una transacción para que no quede medio deshecho.
+     *
+     * La importación no se recuerda como tal, así que se reconoce por el momento en que escribió:
+     * todas sus filas comparten `createdAt` (se insertan de corrido) y el corte se guarda al final,
+     * en el mismo instante. Por eso alcanza con mirar hacia atrás [IMPORT_WINDOW] desde la última
+     * fila de cartola.
+     *
+     * Devuelve `null` cuando no hay ninguna importación que deshacer.
+     */
+    suspend fun undoLast(): UndoReport? = runner.run {
+        val movement = transactions.lastImported()
+        val snapshot = snapshots.lastImported()
+        val lastMovementAt = movement?.createdAt ?: 0L
+        val lastSnapshotAt = snapshot?.createdAt ?: 0L
+        val anchor = maxOf(lastMovementAt, lastSnapshotAt)
+        if (anchor == 0L) return@run null
+
+        val accountId = if (lastSnapshotAt > lastMovementAt) {
+            snapshot!!.accountId
+        } else {
+            movement!!.accountId
+        }
+        val since = anchor - IMPORT_WINDOW
+
+        val removed = transactions.deleteImportedSince(accountId, since)
+        val kept = transactions.countEditedSince(accountId, since)
+        var balanceForgotten = false
+        if (snapshot != null && snapshot.accountId == accountId && snapshot.createdAt >= since) {
+            snapshots.delete(snapshot.id)
+            balanceForgotten = true
+        }
+        if (removed == 0 && !balanceForgotten) null else UndoReport(removed, kept, balanceForgotten)
+    }
+
     /** Una fila y los movimientos que compiten por ella: mismo día, monto y sentido. */
     private data class PoolKey(val dayStart: Long, val amount: Long, val direction: Direction)
 
     private companion object {
+        /**
+         * Las filas de una importación se escriben una detrás de otra: un minuto de margen cubre
+         * una cartola de cientos de movimientos sin alcanzar la importación del mes anterior.
+         */
+        const val IMPORT_WINDOW = 60 * 1000L
+
         /**
          * La cartola dice el día; el aviso del banco trae la hora del aviso, que puede ser la tarde
          * anterior o la mañana siguiente (compras que el banco registra al día siguiente). Una

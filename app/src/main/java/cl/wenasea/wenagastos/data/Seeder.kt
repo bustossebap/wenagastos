@@ -96,13 +96,8 @@ object Seeder {
             income("Sueldo", "💼", "#2E7D32", 200),
             income("Rendimientos", "📈", "#00897B", 210),
             income("Otros ingresos", "➕", "#43A047", 220),
-            CategoryEntity(
-                name = "Entre cuentas",
-                emoji = "🔁",
-                colorHex = "#78909C",
-                kind = CategoryKind.TRANSFER,
-                sortOrder = 300,
-            ),
         )
+        // Un traspaso entre cuentas propias no lleva categoría: la plata no se gastó, cambió de
+        // cuenta. Por eso el catálogo no tiene una categoría de traspaso (Fase 9.1).
     }
 }

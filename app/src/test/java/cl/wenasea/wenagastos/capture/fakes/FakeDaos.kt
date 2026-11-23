@@ -12,7 +12,9 @@ import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CaptureLogEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
+import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
+import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.numbers
 import kotlinx.coroutines.flow.Flow
@@ -162,6 +164,28 @@ class FakeTransactionDao : TransactionDao {
         moved.forEach { rows[it.id] = it.copy(transferAccountId = to, updatedAt = now) }
         publish()
         return moved.size
+    }
+
+    /** Espeja `WHERE source = 'CSV' ORDER BY createdAt DESC, id DESC LIMIT 1`. */
+    override suspend fun lastImported(): TransactionEntity? = rows.values
+        .filter { it.source == TransactionSource.CSV }
+        .maxWithOrNull(compareBy({ it.createdAt }, { it.id }))
+
+    /** Espeja el borrado acotado por cuenta, momento y `updatedAt <= createdAt`. */
+    override suspend fun deleteImportedSince(accountId: Long, since: Long): Int {
+        val doomed = rows.values.filter {
+            it.source == TransactionSource.CSV && it.accountId == accountId &&
+                it.createdAt >= since && it.updatedAt <= it.createdAt
+        }
+        doomed.forEach { rows.remove(it.id) }
+        publish()
+        return doomed.size
+    }
+
+    /** Espeja el conteo de los que se editaron después de importarlos. */
+    override suspend fun countEditedSince(accountId: Long, since: Long): Int = rows.values.count {
+        it.source == TransactionSource.CSV && it.accountId == accountId &&
+            it.createdAt >= since && it.updatedAt > it.createdAt
     }
 
     private fun internalTransfer(tx: TransactionEntity, a: Long, b: Long): Boolean {
@@ -326,6 +350,11 @@ class FakeAccountSnapshotDao : AccountSnapshotDao {
     override suspend fun getAll(): List<AccountSnapshotEntity> = stored
 
     override suspend fun count(): Int = rows.size
+
+    /** Espeja `WHERE source = 'CARTOLA' ORDER BY createdAt DESC, id DESC LIMIT 1`. */
+    override suspend fun lastImported(): AccountSnapshotEntity? = rows.values
+        .filter { it.source == SnapshotSource.CARTOLA }
+        .maxWithOrNull(compareBy({ it.createdAt }, { it.id }))
 
     override suspend fun insert(snapshot: AccountSnapshotEntity): Long {
         val id = if (snapshot.id == 0L) nextId++ else snapshot.id

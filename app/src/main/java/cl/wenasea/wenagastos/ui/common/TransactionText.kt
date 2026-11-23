@@ -10,9 +10,14 @@ import cl.wenasea.wenagastos.domain.transferEnds
  * Cómo se lee un movimiento en Inicio, Movimientos y el detalle de Reportes. Recibe los mapas de
  * categorías y cuentas en vez de un estado concreto, para que las tres pantallas usen el mismo
  * texto sin duplicar la lógica.
+ *
+ * Un traspaso no tiene categoría —la plata no se gastó, cambió de cuenta— así que se dibuja con
+ * `↔️` y no con el `❓` de los gastos que quedaron sin clasificar.
  */
-fun categoryEmoji(transaction: TransactionEntity, categories: Map<Long, CategoryEntity>): String =
-    transaction.categoryId?.let { categories[it]?.emoji } ?: "❓"
+fun categoryEmoji(transaction: TransactionEntity, categories: Map<Long, CategoryEntity>): String {
+    if (transaction.isTransfer) return TRANSFER_EMOJI
+    return transaction.categoryId?.let { categories[it]?.emoji } ?: "❓"
+}
 
 fun categoryColor(transaction: TransactionEntity, categories: Map<Long, CategoryEntity>): Color =
     transaction.categoryId?.let { categories[it]?.colorHex?.asColor() } ?: Color.Gray
@@ -22,14 +27,18 @@ fun transactionSubtitle(
     categories: Map<Long, CategoryEntity>,
     accounts: Map<Long, AccountEntity>,
 ): String {
-    val category = transaction.categoryId?.let { categories[it]?.name } ?: "Sin categoría"
     val account = accounts[transaction.accountId]?.name ?: "Cuenta"
-    // Un traspaso se lee igual desde las dos patas: "Santander → Falabella".
-    if (transaction.isTransfer && transaction.transferAccountId != null) {
+    // Un traspaso se lee igual desde las dos patas: "Santander → Falabella", sin categoría.
+    if (transaction.isTransfer) {
         val ends = transaction.transferEnds()
         val origin = ends.originId?.let { accounts[it]?.name }
         val destination = ends.destinationId?.let { accounts[it]?.name }
-        if (origin != null && destination != null) return "$category · $origin → $destination"
+        if (origin != null && destination != null) return "$origin → $destination"
+        return "Traspaso · $account"
     }
+    val category = transaction.categoryId?.let { categories[it]?.name } ?: "Sin categoría"
     return "$category · $account"
 }
+
+/** El mismo par de cuentas que se lee en la lista, para el globo del avatar. */
+const val TRANSFER_EMOJI = "↔️"

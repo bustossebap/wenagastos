@@ -50,10 +50,12 @@ internal fun DataCard(
     onCreateBackup: (Uri, String) -> Unit,
     onRestoreBackup: (Uri, String) -> Unit,
     onImportStatement: (AccountEntity, Uri) -> Unit,
+    onUndoImport: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var askBackupPassword by remember { mutableStateOf(false) }
     var askRestorePassword by remember { mutableStateOf(false) }
+    var askUndo by remember { mutableStateOf(false) }
     var restoreTarget by remember { mutableStateOf<Uri?>(null) }
 
     // La contraseña se escribe antes de abrir el selector: el archivo se crea al confirmar.
@@ -156,6 +158,39 @@ internal fun DataCard(
                 ) {
                     Text("Importar cartola")
                 }
+                TextButton(
+                    onClick = { askUndo = true },
+                    enabled = !state.busy,
+                ) {
+                    Text("Deshacer la última")
+                }
+            }
+            // Deshacer borra filas: se pregunta antes, y el aviso de abajo cuenta qué pasó.
+            if (askUndo) {
+                AlertDialog(
+                    onDismissRequest = { askUndo = false },
+                    title = { Text("¿Deshacer la última cartola?") },
+                    text = {
+                        Text(
+                            "Se borran los movimientos que anotó la última importación y el corte " +
+                                "de saldo que traía. Lo que llegó por aviso del banco, y lo que " +
+                                "revisaste o corregiste después, no se toca.",
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                askUndo = false
+                                onUndoImport()
+                            },
+                        ) {
+                            Text("Deshacer", color = MaterialTheme.colorScheme.error)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { askUndo = false }) { Text("Cancelar") }
+                    },
+                )
             }
             if (state.busy) {
                 Text(

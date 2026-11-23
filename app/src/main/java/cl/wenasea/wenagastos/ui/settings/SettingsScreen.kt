@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.capture.BankSource
 import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.domain.accountNumber
@@ -186,6 +187,7 @@ fun SettingsScreen(
                 onCreateBackup = viewModel::createBackup,
                 onRestoreBackup = viewModel::restoreBackup,
                 onImportStatement = viewModel::importStatement,
+                onUndoImport = viewModel::undoLastImport,
             )
         }
 
@@ -265,8 +267,11 @@ fun SettingsScreen(
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    SectionHeader(title = "Categorías (${state.categories.size})")
-                    state.categories.forEachIndexed { index, category ->
+                    // Las categorías de traspaso ya no existen en el catálogo (Fase 9.1); si quedó
+                    // una de antes, no se muestra: un traspaso no se clasifica.
+                    val shown = state.categories.filter { it.kind != CategoryKind.TRANSFER }
+                    SectionHeader(title = "Categorías (${shown.size})")
+                    shown.forEachIndexed { index, category ->
                         if (index > 0) LedgerRule(modifier = Modifier.padding(top = 10.dp))
                         Row(
                             modifier = Modifier

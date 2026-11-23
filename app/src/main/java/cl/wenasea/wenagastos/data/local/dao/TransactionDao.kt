@@ -194,6 +194,38 @@ interface TransactionDao {
     )
     fun observeSince(from: Long): Flow<List<TransactionEntity>>
 
+    /**
+     * La última fila que entró por cartola: dice qué cuenta y en qué momento se anotó. Lo usa
+     * "Deshacer la última importación" (Fase 8.4): todo lo que comparte ese momento es de la misma
+     * importación, porque se escribe dentro de una sola transacción.
+     */
+    @Query("SELECT * FROM transactions WHERE source = 'CSV' ORDER BY createdAt DESC, id DESC LIMIT 1")
+    suspend fun lastImported(): TransactionEntity?
+
+    /**
+     * Borra lo que anotó una importación. Se pide `updatedAt <= createdAt` a propósito: un
+     * movimiento que el usuario revisó o corrigió después ya no es "lo que dijo la cartola", y
+     * deshacer la importación no puede llevarse ese trabajo.
+     */
+    @Query(
+        """
+        DELETE FROM transactions
+        WHERE source = 'CSV' AND accountId = :accountId AND createdAt >= :since
+          AND updatedAt <= createdAt
+        """,
+    )
+    suspend fun deleteImportedSince(accountId: Long, since: Long): Int
+
+    /** Los de esa importación que se quedan porque el usuario los tocó después. */
+    @Query(
+        """
+        SELECT COUNT(*) FROM transactions
+        WHERE source = 'CSV' AND accountId = :accountId AND createdAt >= :since
+          AND updatedAt > createdAt
+        """,
+    )
+    suspend fun countEditedSince(accountId: Long, since: Long): Int
+
     /** Vacía la tabla. Solo lo usa la restauración de un respaldo, dentro de una transacción. */
     @Query("DELETE FROM transactions")
     suspend fun deleteAll()

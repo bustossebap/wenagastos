@@ -99,7 +99,10 @@ object Export {
         put("tipo", typeLabel(transaction))
         put("cuenta", accountName(transaction.accountId, accounts))
         transaction.transferAccountId?.let { put("cuentaDestino", accountName(it, accounts)) }
-        put("categoria", categoryName(transaction.categoryId, categories))
+        put(
+            "categoria",
+            if (transaction.isTransfer) "" else categoryName(transaction.categoryId, categories),
+        )
         put("comercio", transaction.merchantRaw)
         put("estado", transaction.status.label)
         put("origen", transaction.source.label)

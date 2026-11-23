@@ -317,6 +317,14 @@ class SettingsViewModel(
     }
 
     /**
+     * Deshace la última cartola importada: borra sus movimientos y olvida su corte de saldo. Si no
+     * hay ninguna, lo dice en vez de fallar.
+     */
+    fun undoLastImport() = runTask {
+        statements.undoLast()?.describe() ?: "No hay ninguna cartola importada que deshacer."
+    }
+
+    /**
      * Todo el trabajo de archivo corre en IO y termina en un aviso, nunca en una excepción que
      * tumbe la pantalla: si el selector devolvió una URI que ya no existe, se dice y se sigue.
      */

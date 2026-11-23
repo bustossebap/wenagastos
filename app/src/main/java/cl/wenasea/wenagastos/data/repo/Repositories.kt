@@ -64,6 +64,9 @@ class SnapshotRepository(private val dao: AccountSnapshotDao) {
 
     suspend fun delete(id: Long) = dao.deleteById(id)
 
+    /** El último corte que dejó una cartola, con la cuenta y el momento en que entró. */
+    suspend fun lastImported() = dao.lastImported()
+
     /** Borra el corte vigente: el saldo vuelve a no saberse y manda el corte anterior, si hay. */
     suspend fun forgetLatest(accountId: Long) {
         dao.latestFor(accountId)?.let { dao.deleteById(it.id) }
@@ -200,6 +203,17 @@ class TransactionRepository(private val dao: TransactionDao) {
     suspend fun delete(transaction: TransactionEntity) = dao.delete(transaction)
 
     suspend fun deleteById(id: Long) = dao.deleteById(id)
+
+    /** La última fila que entró por cartola; `null` si nunca se importó ninguna. */
+    suspend fun lastImported() = dao.lastImported()
+
+    /** Borra lo que anotó una importación sin tocar lo que el usuario corrigió después. */
+    suspend fun deleteImportedSince(accountId: Long, since: Long) =
+        dao.deleteImportedSince(accountId, since)
+
+    /** Los de esa importación que se quedan porque se revisaron o corrigieron después. */
+    suspend fun countEditedSince(accountId: Long, since: Long) =
+        dao.countEditedSince(accountId, since)
 
     suspend fun existsByHash(hash: String) = dao.countByHash(hash) > 0
 

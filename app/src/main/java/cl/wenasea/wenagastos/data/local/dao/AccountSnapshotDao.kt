@@ -34,6 +34,13 @@ interface AccountSnapshotDao {
     @Query("SELECT COUNT(*) FROM account_snapshots")
     suspend fun count(): Int
 
+    /** El último corte que dejó una cartola: es el que se olvida al deshacer esa importación. */
+    @Query(
+        "SELECT * FROM account_snapshots WHERE source = 'CARTOLA' " +
+            "ORDER BY createdAt DESC, id DESC LIMIT 1",
+    )
+    suspend fun lastImported(): AccountSnapshotEntity?
+
     @Insert
     suspend fun insert(snapshot: AccountSnapshotEntity): Long
 

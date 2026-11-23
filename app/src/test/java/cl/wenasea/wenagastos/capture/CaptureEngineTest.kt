@@ -56,7 +56,6 @@ class CaptureEngineTest {
     private var supermercadoId = 0L
     private var restaurantesId = 0L
     private var otrosIngresosId = 0L
-    private var entreCuentasId = 0L
     private var saludId = 0L
     private var sueldoId = 0L
 
@@ -105,7 +104,6 @@ class CaptureEngineTest {
         supermercadoId = categories.stored.first { it.name == "Supermercado" }.id
         restaurantesId = categories.stored.first { it.name == "Restaurantes" }.id
         otrosIngresosId = categories.stored.first { it.name == "Otros ingresos" }.id
-        entreCuentasId = categories.stored.first { it.name == "Entre cuentas" }.id
         saludId = categories.stored.first { it.name == "Salud" }.id
         sueldoId = categories.stored.first { it.name == "Sueldo" }.id
 
@@ -416,7 +414,7 @@ class CaptureEngineTest {
             assertEquals(40_000L, row.amount)
             assertEquals(Direction.CREDIT, row.direction)
             assertEquals("Transferencia", row.merchantRaw)
-            assertEquals(entreCuentasId, row.categoryId)
+            assertNull(row.categoryId)  // un traspaso no lleva categoría
             assertTrue(row.isTransfer)
             assertFalse(row.isExpense)
             assertEquals(TransactionStatus.CONFIRMED, row.status)
@@ -610,7 +608,7 @@ class CaptureEngineTest {
         runBlocking {
             engine.handle(notif(text = traspasoDesdeOtra))
             val first = txDao.stored.single()
-            assertEquals(entreCuentasId, first.categoryId)
+            assertNull(first.categoryId)  // un traspaso no lleva categoría
 
             // Aunque se recuerde otra categoría para ese texto, un traspaso sigue siendo traspaso.
             rulesRepo.remember(first.merchantRaw, first.direction, restaurantesId)
@@ -618,7 +616,7 @@ class CaptureEngineTest {
 
             assertEquals(2, txDao.stored.size)
             assertTrue(txDao.stored.all { it.isTransfer })
-            assertTrue(txDao.stored.all { it.categoryId == entreCuentasId })
+            assertTrue(txDao.stored.all { it.categoryId == null })
         }
     }
 

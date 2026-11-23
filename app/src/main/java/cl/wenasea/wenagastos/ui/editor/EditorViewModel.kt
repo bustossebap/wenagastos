@@ -4,7 +4,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
-import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
@@ -118,11 +117,7 @@ class EditorViewModel(
             merchantRaw = cleanMerchant,
             merchantNorm = cleanMerchant.lowercase(),
         )
-        // Un traspaso no es gasto ni ingreso: se guarda siempre con la categoría de traspaso.
-        val transferCategoryId = state.value.categories
-            .firstOrNull { it.kind == CategoryKind.TRANSFER }
-            ?.id
-
+        // Un traspaso no es gasto ni ingreso: no lleva categoría, así que no hay nada que resolver.
         val entity = base.copy(
             accountId = accountId,
             occurredAt = occurredAtMillis,
@@ -130,7 +125,7 @@ class EditorViewModel(
             direction = direction,
             merchantRaw = cleanMerchant,
             merchantNorm = cleanMerchant.lowercase(),
-            categoryId = if (isTransfer) transferCategoryId ?: categoryId else categoryId,
+            categoryId = if (isTransfer) null else categoryId,
             isExpense = direction == Direction.DEBIT && !isTransfer,
             isTransfer = isTransfer,
             transferAccountId = if (isTransfer) transferAccountId else null,
@@ -240,7 +235,8 @@ class EditorViewModel(
                 direction = leg.direction.opposite(),
                 merchantRaw = counterpartName,
                 merchantNorm = counterpartName.lowercase(),
-                categoryId = leg.categoryId,
+                // La otra pata tampoco lleva categoría: es el mismo traspaso.
+                categoryId = null,
                 status = TransactionStatus.CONFIRMED,
                 isExpense = false,
                 isTransfer = true,

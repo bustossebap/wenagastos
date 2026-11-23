@@ -144,8 +144,8 @@ fun TransactionEditorScreen(
 
     val visibleCategories = state.categories.filter { category ->
         if (isTransfer) {
-            // Un traspaso no es gasto ni ingreso: solo se ofrecen las categorías de traspaso.
-            category.kind == CategoryKind.TRANSFER
+            // Un traspaso no lleva categoría: no es gasto ni ingreso.
+            false
         } else {
             category.kind ==
                 if (direction == Direction.DEBIT) CategoryKind.EXPENSE else CategoryKind.INCOME
@@ -231,11 +231,8 @@ fun TransactionEditorScreen(
                 checked = isTransfer,
                 onCheckedChange = { checked ->
                     isTransfer = checked
-                    if (checked) {
-                        // Al marcarlo, la categoría de traspaso es la única que tiene sentido.
-                        state.categories.firstOrNull { it.kind == CategoryKind.TRANSFER }
-                            ?.let { categoryId = it.id }
-                    }
+                    // Un traspaso no tiene categoría: si se marca, se suelta la que estuviera puesta.
+                    if (checked) categoryId = -1L
                 },
             )
         }
@@ -394,20 +391,22 @@ fun TransactionEditorScreen(
             }
         }
 
-        Text(
-            text = "Categoría",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(visibleCategories, key = { it.id }) { category ->
-                WenaChip(
-                    text = "${category.emoji} ${category.name}",
-                    selected = effectiveCategoryId == category.id,
-                    onClick = {
-                        categoryId = if (categoryId == category.id) -1L else category.id
-                    },
-                )
+        if (!isTransfer) {
+            Text(
+                text = "Categoría",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(visibleCategories, key = { it.id }) { category ->
+                    WenaChip(
+                        text = "${category.emoji} ${category.name}",
+                        selected = effectiveCategoryId == category.id,
+                        onClick = {
+                            categoryId = if (categoryId == category.id) -1L else category.id
+                        },
+                    )
+                }
             }
         }
 

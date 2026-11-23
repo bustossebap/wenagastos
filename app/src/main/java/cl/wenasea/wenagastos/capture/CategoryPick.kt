@@ -1,6 +1,5 @@
 package cl.wenasea.wenagastos.capture
 
-import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
@@ -18,7 +17,9 @@ object CategoryPick {
 
     /**
      * @param merchantKnown `false` cuando el banco no dijo el comercio: ahí no hay regla que valga.
-     * @param isTransfer un traspaso entre cuentas propias no es gasto ni ingreso.
+     * @param isTransfer un traspaso entre cuentas propias no es gasto ni ingreso, así que **no lleva
+     *   categoría**: la plata no se gastó, solo cambió de cuenta, y decir "Sin categoría" sería
+     *   tratarlo como un gasto al que le falta la etiqueta.
      */
     suspend fun resolve(
         rules: MerchantRuleRepository,
@@ -29,8 +30,8 @@ object CategoryPick {
         merchantKnown: Boolean = true,
         isTransfer: Boolean = false,
     ): Long? {
+        if (isTransfer) return null
         val active = categories.listActive()
-        if (isTransfer) return active.firstOrNull { it.kind == CategoryKind.TRANSFER }?.id
         if (merchantKnown) rules.resolve(merchant, direction)?.let { return it }
         val name = MerchantCategories.categoryFor(merchant, direction, rawText) ?: return null
         val wanted = TextNorm.plain(name)

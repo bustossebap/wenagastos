@@ -215,4 +215,79 @@ class StatementImportRepositoryTest {
         assertEquals(TransactionStatus.PENDING, row.status)
         assertTrue(row.notes!!.contains("no traía el comercio"))
     }
+
+    /** Un movimiento de la cartola del mes pasado: se quedó ahí, con su propio momento de entrada. */
+    private fun previousImport(at: Long) = TransactionEntity(
+        accountId = accountId,
+        occurredAt = Dates.startOfDay(LocalDate.of(2026, 10, 20)),
+        amount = 9_990L,
+        direction = Direction.DEBIT,
+        merchantRaw = "UNIMARC OCTUBRE",
+        merchantNorm = "unimarc octubre",
+        source = TransactionSource.CSV,
+        createdAt = at,
+        updatedAt = at,
+    )
+
+    @Test
+    fun `deshacer la ultima cartola borra lo que anoto y el saldo que dejo`() = runBlocking {
+        val monthAgo = System.currentTimeMillis() - 30 * 86_400_000L
+        movements.seed(previousImport(monthAgo))
+        snapshots.seed(
+            AccountSnapshotEntity(
+                accountId = accountId,
+                asOf = monthAgo,
+                balance = 1_500_000L,
+                source = SnapshotSource.CARTOLA,
+                createdAt = monthAgo,
+            ),
+        )
+
+        repository.import(
+            accountId,
+            sheet(
+                "Fecha;Descripción;Cargo;Abono;Saldo\n" +
+                    "18/11/2026;LIDER EXPRESS;12.345;;1.234.567\n" +
+                    "19/11/2026;SUELDO;;900.000;2.134.567\n",
+            ),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+        assertEquals(3, stored().size)
+
+        val report = repository.undoLast()!!
+
+        assertEquals(2, report.removed)
+        assertEquals(0, report.kept)
+        assertTrue(report.balanceForgotten)
+        // La cartola del mes pasado no se toca: es otra importación.
+        assertEquals("UNIMARC OCTUBRE", stored().single().merchantRaw)
+        assertEquals(monthAgo, snapshots.stored.single().createdAt)
+        assertTrue(report.describe().contains("Borré 2 movimientos"))
+    }
+
+    @Test
+    fun `deshacer no se lleva el movimiento que se reviso despues`() = runBlocking {
+        repository.import(
+            accountId,
+            sheet(
+                "Fecha;Descripción;Monto\n" +
+                    "18/11/2026;LIDER;12.345\n" +
+                    "18/11/2026;JUMBO;8.000\n",
+            ),
+        )
+        val edited = stored().first { it.merchantRaw == "JUMBO" }
+        movements.update(edited.copy(merchantRaw = "Jumbo Costanera", updatedAt = edited.createdAt + 5_000))
+
+        val report = repository.undoLast()!!
+
+        assertEquals(1, report.removed)
+        assertEquals(1, report.kept)
+        assertEquals("Jumbo Costanera", stored().single().merchantRaw)
+        assertTrue(report.describe().contains("Dejé 1"))
+    }
+
+    @Test
+    fun `sin cartolas importadas no hay nada que deshacer`() = runBlocking {
+        assertNull(repository.undoLast())
+    }
 }
