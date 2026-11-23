@@ -184,6 +184,9 @@ class TransactionRepository(private val dao: TransactionDao) {
 
     fun observePendingCount() = dao.observePendingCount()
 
+    /** Las compras en cuotas de todos los meses, para saber cuánto falta pagar (Fase 9.3). */
+    fun observeInstallments() = dao.observeInstallments()
+
     /** Lo que puede mover un saldo: todo lo posterior al corte más viejo (ver el DAO). */
     fun observeSinceSnapshotCutoffs() = dao.observeSinceSnapshotCutoffs()
 

@@ -145,6 +145,22 @@ data class TransactionEntity(
     val transferAccountId: Long? = null,
     /** Identificador común de las dos patas de un mismo traspaso. */
     val transferGroupId: Long? = null,
+    /**
+     * Cuota que es este movimiento dentro de una compra en cuotas (Fase 9.3): `3` de
+     * [installmentTotal]. `null` cuando la compra se pagó de una vez, que es el caso normal.
+     *
+     * Se guarda como número y no como el texto `3/12` de la cartola, para poder ordenar y agrupar
+     * sin depender de cómo lo escribió el banco.
+     */
+    val installmentNumber: Int? = null,
+    /** Cuántas cuotas tiene la compra; `null` cuando no va en cuotas. */
+    val installmentTotal: Int? = null,
+    /**
+     * Precio de la compra completa, cuando la cartola lo informa (`MONTO ORIGEN`). La cuota de
+     * [amount] es lo que se pagó este mes; esto es lo que costó la compra, y sirve para decir
+     * cuánto falta pagar sin adivinar.
+     */
+    val originAmount: Long? = null,
     val notes: String? = null,
     val source: TransactionSource = TransactionSource.MANUAL,
     val rawText: String? = null,

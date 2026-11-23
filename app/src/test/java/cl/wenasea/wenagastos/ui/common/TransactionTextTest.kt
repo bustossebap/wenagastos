@@ -87,6 +87,48 @@ class TransactionTextTest {
         assertEquals("Supermercado · Santander Cta. Cte.", transactionSubtitle(row, categories, accounts))
     }
 
+    @Test
+    fun `una cuota dice en cual va, para poder cuadrarla con Reportes`() {
+        // Sin la cuota en la fila, «Cuotas por pagar» en Reportes y esta lista no se pueden cuadrar
+        // a ojo: la fila se lee igual que cualquier gasto del mes.
+        val row = TransactionEntity(
+            accountId = falabella.id,
+            occurredAt = 1L,
+            amount = 50_000L,
+            direction = Direction.DEBIT,
+            merchantRaw = "Altamar Spa",
+            merchantNorm = "altamar spa",
+            categoryId = supermercado.id,
+            installmentNumber = 3,
+            installmentTotal = 12,
+            originAmount = 600_000L,
+        )
+
+        assertEquals(
+            "Supermercado · Falabella Cta. Cte. · cuota 3/12",
+            transactionSubtitle(row, categories, accounts),
+        )
+    }
+
+    @Test
+    fun `si el banco no dijo en cual va, la fila dice en cuantas cuotas`() {
+        val row = TransactionEntity(
+            accountId = falabella.id,
+            occurredAt = 1L,
+            amount = 50_000L,
+            direction = Direction.DEBIT,
+            merchantRaw = "Altamar Spa",
+            merchantNorm = "altamar spa",
+            categoryId = supermercado.id,
+            installmentTotal = 12,
+        )
+
+        assertEquals(
+            "Supermercado · Falabella Cta. Cte. · en 12 cuotas",
+            transactionSubtitle(row, categories, accounts),
+        )
+    }
+
     private fun transfer(
         accountId: Long,
         transferAccountId: Long?,

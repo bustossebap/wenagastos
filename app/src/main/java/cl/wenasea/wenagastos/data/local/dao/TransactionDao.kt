@@ -26,6 +26,20 @@ interface TransactionDao {
     @Query("SELECT COUNT(*) FROM transactions WHERE status = 'PENDING'")
     fun observePendingCount(): Flow<Int>
 
+    /**
+     * Los movimientos de compras en cuotas (Fase 9.3), de todos los meses: una compra en 12 cuotas
+     * empezó hace meses y sigue cobrándose, así que la pregunta «cuánto falta pagar» no cabe en un
+     * mes. La pantalla de Reportes los agrupa por compra.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE installmentTotal IS NOT NULL
+        ORDER BY occurredAt ASC, id ASC
+        """,
+    )
+    fun observeInstallments(): Flow<List<TransactionEntity>>
+
     @Query("SELECT * FROM transactions WHERE id = :id")
     suspend fun getById(id: Long): TransactionEntity?
 

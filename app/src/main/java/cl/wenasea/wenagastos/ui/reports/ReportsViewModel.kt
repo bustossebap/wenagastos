@@ -12,6 +12,7 @@ import cl.wenasea.wenagastos.data.repo.TransactionRepository
 import cl.wenasea.wenagastos.domain.CategoryFields
 import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.MonthPoint
 import cl.wenasea.wenagastos.domain.Reports
 import java.time.YearMonth
@@ -41,6 +42,8 @@ data class ReportsUiState(
     val budgetTotal: Long = 0L,
     /** Lo gastado dentro de las categorías que sí tienen presupuesto. */
     val budgetSpent: Long = 0L,
+    /** Las compras en cuotas que todavía se están pagando, de la que más debe a la que menos. */
+    val installments: List<Installments.Plan> = emptyList(),
     val loaded: Boolean = false,
 ) {
     val balance: Long get() = income - expenses
@@ -69,7 +72,10 @@ class ReportsViewModel(
                 ),
                 categories.observeAll(),
                 accounts.observeAll(),
-            ) { monthTransactions, windowTransactions, allCategories, allAccounts ->
+                // Las cuotas no dependen del mes: una compra en 12 cuotas sigue viva aunque se esté
+                // mirando un mes en que no se cobró.
+                transactions.observeInstallments(),
+            ) { monthTransactions, windowTransactions, allCategories, allAccounts, installments ->
                 buildState(
                     yearMonth = yearMonth,
                     months = months,
@@ -77,6 +83,7 @@ class ReportsViewModel(
                     windowTransactions = windowTransactions,
                     allCategories = allCategories,
                     allAccounts = allAccounts,
+                    installmentTransactions = installments,
                 )
             }
         }
@@ -156,6 +163,7 @@ class ReportsViewModel(
         windowTransactions: List<TransactionEntity>,
         allCategories: List<CategoryEntity>,
         allAccounts: List<AccountEntity>,
+        installmentTransactions: List<TransactionEntity>,
     ): ReportsUiState {
         val totals = Reports.byCategory(monthTransactions, allCategories)
         return ReportsUiState(
@@ -170,6 +178,7 @@ class ReportsViewModel(
             dailyAverage = Reports.dailyAverage(monthTransactions, yearMonth),
             budgetTotal = Reports.totalBudget(allCategories),
             budgetSpent = totals.filter { it.budget != null }.sumOf { it.spent },
+            installments = Installments.plans(installmentTransactions),
             loaded = true,
         )
     }

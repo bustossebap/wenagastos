@@ -44,6 +44,7 @@ import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.domain.BudgetStatus
 import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.domain.Reports
 import cl.wenasea.wenagastos.ui.common.BudgetProgress
@@ -144,6 +145,8 @@ fun ReportsScreen(
         }
 
         item { TrendCard(state = state, onSelectMonth = viewModel::selectMonth) }
+
+        item { InstallmentsCard(plans = state.installments) }
 
         item {
             BudgetsCard(
@@ -477,6 +480,71 @@ private fun TrendCard(state: ReportsUiState, onSelectMonth: (YearMonth) -> Unit)
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+    }
+}
+
+/**
+ * «Cuotas por pagar»: lo que ya está comprado y todavía se sigue pagando.
+ *
+ * No es el gasto del mes —cada cuota ya está anotada en su mes— sino la parte del sueldo que viene
+ * comprometida, así que no cambia al cambiar de mes. La barra de cada compra dice cuánto va pagado;
+ * el monto grande de la derecha es lo que falta.
+ */
+@Composable
+private fun InstallmentsCard(plans: List<Installments.Plan>) {
+    if (plans.isEmpty()) return
+    val pending = plans.sumOf { it.pending }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            SectionHeader(
+                title = "Cuotas por pagar",
+                subtitle = if (plans.size == 1) "1 compra en curso" else "${plans.size} compras en curso",
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = Money.format(pending),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "Lo que te falta pagar en las cuotas que vienen.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            plans.forEach { plan -> InstallmentRow(plan) }
+        }
+    }
+}
+
+/** Una compra en cuotas: el comercio, en qué cuota va y cuánto falta. */
+@Composable
+private fun InstallmentRow(plan: Installments.Plan) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = plan.merchant,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = Money.format(plan.pending),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(
+            text = "Cuota ${plan.paid} de ${plan.total} · ${Money.format(plan.perCharge)} al mes" +
+                (if (plan.remaining == 1) " · falta 1" else " · faltan ${plan.remaining}"),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(6.dp))
+        ShareBar(
+            share = plan.paid / plan.total.toFloat(),
+            color = MaterialTheme.colorScheme.primary,
+        )
     }
 }
 

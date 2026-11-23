@@ -61,8 +61,11 @@ object Backup {
      *
      * v5 agrega `nature` a las categorías (Fase 9.5). Un v4 se lee igual: toda categoría sin el
      * campo queda `VARIABLE`, que es el mismo valor que le puso la migración de la base.
+     *
+     * v6 agrega `installmentNumber`, `installmentTotal` y `originAmount` a los movimientos (Fase
+     * 9.3). Un v5 se lee igual: las tres quedan en `null`, que es "no va en cuotas".
      */
-    const val VERSION = 5
+    const val VERSION = 6
 
     fun encode(
         data: BackupData,
@@ -143,6 +146,11 @@ object Backup {
         "isTransfer" to transaction.isTransfer,
         "transferAccountId" to transaction.transferAccountId,
         "transferGroupId" to transaction.transferGroupId,
+        // Fase 9.3: la cuota y el precio de la compra. Se escriben en `null` cuando no van en
+        // cuotas, para que el archivo se lea tal como es.
+        "installmentNumber" to transaction.installmentNumber,
+        "installmentTotal" to transaction.installmentTotal,
+        "originAmount" to transaction.originAmount,
         "notes" to transaction.notes,
         "source" to transaction.source.name,
         "rawText" to transaction.rawText,
@@ -311,6 +319,10 @@ object Backup {
             isTransfer = map.bool("isTransfer", false),
             transferAccountId = map.long("transferAccountId"),
             transferGroupId = map.long("transferGroupId"),
+            // Un respaldo v5 no trae cuotas: el movimiento se lee como una compra pagada de una vez.
+            installmentNumber = map.long("installmentNumber")?.toInt(),
+            installmentTotal = map.long("installmentTotal")?.toInt(),
+            originAmount = map.long("originAmount"),
             notes = map.string("notes"),
             source = TransactionSource.entries.firstOrNull { it.name == map.string("source") }
                 ?: TransactionSource.MANUAL,

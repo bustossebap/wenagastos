@@ -170,6 +170,10 @@ class StatementImportRepository(
                     status = if (known) TransactionStatus.CONFIRMED else TransactionStatus.PENDING,
                     isExpense = row.direction == Direction.DEBIT,
                     source = TransactionSource.CSV,
+                    // Fase 9.3: la cuota y el precio de la compra, para saber cuánto falta pagar.
+                    installmentNumber = row.installmentNumber,
+                    installmentTotal = row.installmentTotal,
+                    originAmount = row.originAmount,
                     rawText = row.rawText,
                     notes = if (known) null else MISSING_MERCHANT,
                 ),
@@ -244,6 +248,10 @@ class StatementImportRepository(
         return existing.copy(
             merchantRaw = row.merchant,
             merchantNorm = row.merchant.lowercase(),
+            // La cuota la sabe la cartola y el aviso del banco no: si la fila la trae, se anota.
+            installmentNumber = row.installmentNumber ?: existing.installmentNumber,
+            installmentTotal = row.installmentTotal ?: existing.installmentTotal,
+            originAmount = row.originAmount ?: existing.originAmount,
             categoryId = existing.categoryId ?: CategoryPick.resolve(
                 rules = rules,
                 categories = categories,

@@ -28,6 +28,22 @@ data class StatementTemplate(
     val amountColumn: String? = null,
     /** Columna del saldo que va dejando la cartola. Opcional: la tarjeta no lo trae. */
     val balanceColumn: String? = null,
+    /**
+     * Columna que dice en qué cuota va la compra (`NºCUOTA`, `CUOTAS PENDIENTES`). Fase 9.3: la
+     * cuota de la tarjeta no es el precio de la compra, y leerla como monto infla el mes.
+     */
+    val installmentColumn: String? = null,
+    /**
+     * Columna con la plata que se cobra cada mes (`VALOR CUOTA`), cuando el banco la separa del
+     * monto. En las filas que van en cuotas esta columna manda sobre [amountColumn], y entonces el
+     * monto de la compra queda en [originColumn].
+     */
+    val installmentAmountColumn: String? = null,
+    /**
+     * Columna con el precio de la compra completa (`MONTO ORIGEN`), cuando la tarjeta lo informa
+     * aparte de la cuota. Opcional.
+     */
+    val originColumn: String? = null,
 ) {
 
     /** `true` cuando el monto viene en una sola columna, con signo o sin él. */
@@ -50,6 +66,9 @@ data class StatementTemplate(
             "abono" to creditColumn,
             "monto" to amountColumn,
             "saldo" to balanceColumn,
+            "cuota" to installmentColumn,
+            "valorCuota" to installmentAmountColumn,
+            "origen" to originColumn,
         ),
     )
 
@@ -73,6 +92,11 @@ data class StatementTemplate(
             }
 
             val date = first(::isDate)
+            // La cuota se reclama antes que el cargo y que el monto: «CARGO DEL MES NºCUOTA» habla
+            // de la cuota de la compra, no de plata, y «VALOR CUOTA» es la cuota y no el total.
+            val installment = first(::isInstallment)
+            val installmentAmount = first(::isInstallmentAmount)
+            val origin = first(::isOriginAmount)
             // El cargo y el abono se reclaman antes que el monto: "Monto cargo" es un cargo.
             val credit = first(::isCredit)
             val debit = first(::isDebit)
@@ -88,6 +112,13 @@ data class StatementTemplate(
                 creditColumn = if (credit >= 0) headers[credit].trim() else null,
                 amountColumn = if (amount >= 0) headers[amount].trim() else null,
                 balanceColumn = if (balance >= 0) headers[balance].trim() else null,
+                installmentColumn = if (installment >= 0) headers[installment].trim() else null,
+                installmentAmountColumn = if (installmentAmount >= 0) {
+                    headers[installmentAmount].trim()
+                } else {
+                    null
+                },
+                originColumn = if (origin >= 0) headers[origin].trim() else null,
             )
             return template.takeIf { it.hasSingleAmount || it.hasTwoAmountColumns }
         }
@@ -108,6 +139,11 @@ data class StatementTemplate(
                 creditColumn = map["abono"] as? String,
                 amountColumn = map["monto"] as? String,
                 balanceColumn = map["saldo"] as? String,
+                // Un JSON guardado antes de la Fase 9.3 no trae estas dos: la cartola se lee
+                // como antes, sin cuotas.
+                installmentColumn = map["cuota"] as? String,
+                installmentAmountColumn = map["valorCuota"] as? String,
+                originColumn = map["origen"] as? String,
             ).takeIf { it.hasSingleAmount || it.hasTwoAmountColumns }
         }
 
@@ -133,5 +169,21 @@ data class StatementTemplate(
 
         private fun isBalance(column: String): Boolean =
             column.startsWith("saldo") || column == "balance"
+
+        /**
+         * La columna que dice en qué cuota va la compra: `NºCUOTA`, `CUOTA`, `CARGO DEL MES NºCUOTA`
+         * o `CUOTAS PENDIENTES`. Ahí no hay plata —el banco escribe `05/06`, o cuántas faltan—, así
+         * que leerla como monto corre la fila entera.
+         */
+        private fun isInstallment(column: String): Boolean =
+            column.contains("cuota") && !column.startsWith("valor") && !column.contains("monto")
+
+        /** La plata que se cobra cada mes cuando el banco separa el total de la cuota. */
+        private fun isInstallmentAmount(column: String): Boolean =
+            column.contains("cuota") && (column.startsWith("valor") || column.contains("monto"))
+
+        /** El precio de la compra completa, cuando la tarjeta lo informa aparte de la cuota. */
+        private fun isOriginAmount(column: String): Boolean =
+            column.contains("origen") || column.contains("precio")
     }
 }

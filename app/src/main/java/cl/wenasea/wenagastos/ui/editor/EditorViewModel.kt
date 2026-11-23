@@ -12,6 +12,7 @@ import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.MerchantRuleRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.domain.opposite
 import cl.wenasea.wenagastos.domain.transferEnds
@@ -88,6 +89,8 @@ class EditorViewModel(
         transferAccountId: Long? = null,
         createCounterpart: Boolean = false,
         rememberRule: Boolean = false,
+        installmentNumber: Int? = null,
+        installmentTotal: Int? = null,
         occurredAtMillis: Long,
     ) {
         val amount = Money.parse(amountText)
@@ -107,6 +110,24 @@ class EditorViewModel(
             local.update { it.copy(error = "El origen y el destino no pueden ser la misma cuenta") }
             return
         }
+
+        // Fase 9.3: la cuota. Vacío es «no va en cuotas»; si se escribe, los dos números tienen
+        // que calzar —un «3 de ?» no dice nada y no se guarda—.
+        val total = installmentTotal?.takeIf { it in 2..Installments.MAX }
+        if (installmentTotal != null && total == null) {
+            local.update {
+                it.copy(error = "Hasta ${Installments.MAX} cuotas: revisa el número")
+            }
+            return
+        }
+        if (installmentNumber != null && (total == null || installmentNumber !in 1..total)) {
+            local.update {
+                it.copy(error = "La cuota va entre 1 y el total, por ejemplo 3 de 12")
+            }
+            return
+        }
+        // Una cuota es parte de un gasto: ni un traspaso ni un ingreso van en cuotas.
+        val onInstallments = !isTransfer && direction == Direction.DEBIT && total != null
 
         val cleanMerchant = merchant.trim().ifBlank { "Sin nombre" }
         val base = local.value.transaction ?: TransactionEntity(
@@ -133,6 +154,12 @@ class EditorViewModel(
             status = TransactionStatus.CONFIRMED,
             // El motivo del "por revisar" lo generó el motor: al guardar, el usuario ya decidió.
             notes = null,
+            // Fase 9.3: la cuota solo se guarda si el movimiento es un gasto y va en cuotas. El
+            // precio de la compra (`originAmount`) se conserva: es de la compra, no de este mes,
+            // pero se suelta si la compra deja de estar en cuotas.
+            installmentNumber = if (onInstallments) installmentNumber else null,
+            installmentTotal = if (onInstallments) total else null,
+            originAmount = if (onInstallments) base.originAmount else null,
         )
 
         viewModelScope.launch {

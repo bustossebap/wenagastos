@@ -45,6 +45,7 @@ import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.domain.transferColumns
 import cl.wenasea.wenagastos.domain.transferEnds
@@ -82,6 +83,10 @@ fun TransactionEditorScreen(
     var createCounterpart by rememberSaveable { mutableStateOf(true) }
     // Fase 3: por defecto NO se aprende nada; el usuario marca la casilla a propósito.
     var rememberRule by rememberSaveable { mutableStateOf(false) }
+    // Fase 9.3: la cuota. Plegada por defecto, porque la mayoría de los gastos no va en cuotas.
+    var installmentOn by rememberSaveable { mutableStateOf(false) }
+    var installmentNumberText by rememberSaveable { mutableStateOf("") }
+    var installmentTotalText by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(state.transaction) {
         val stored = state.transaction ?: return@LaunchedEffect
@@ -93,6 +98,10 @@ fun TransactionEditorScreen(
             direction = stored.direction
             isTransfer = stored.isTransfer
             occurredAt = stored.occurredAt
+            // Fase 9.3: si la compra venía en cuotas, la casilla se abre con lo que traía.
+            installmentOn = stored.installmentTotal != null
+            installmentNumberText = stored.installmentNumber?.toString().orEmpty()
+            installmentTotalText = stored.installmentTotal?.toString().orEmpty()
             if (stored.isTransfer) {
                 val ends = stored.transferEnds()
                 originId = ends.originId ?: -1L
@@ -292,6 +301,63 @@ fun TransactionEditorScreen(
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )
+
+        // Fase 9.3: una compra en cuotas se anota mes a mes, así que el monto de arriba es la
+        // cuota y no el precio de la compra. Solo se pregunta en un gasto: un ingreso o un
+        // traspaso no se compra en cuotas.
+        if (!isTransfer && direction == Direction.DEBIT) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Compra en cuotas",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        text = if (installmentOn) {
+                            installmentHint(amountText, installmentNumberText, installmentTotalText)
+                        } else {
+                            "El monto es lo que te cobraron este mes, no el precio de la compra."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Checkbox(
+                    checked = installmentOn,
+                    onCheckedChange = { on -> installmentOn = on },
+                )
+            }
+            if (installmentOn) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    OutlinedTextField(
+                        value = installmentNumberText,
+                        onValueChange = { input ->
+                            installmentNumberText = input.filter { it.isDigit() }.take(2)
+                        },
+                        label = { Text("Cuota") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = installmentTotalText,
+                        onValueChange = { input ->
+                            installmentTotalText = input.filter { it.isDigit() }.take(2)
+                        },
+                        label = { Text("de") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -525,6 +591,14 @@ fun TransactionEditorScreen(
                     transferAccountId = columns?.transferAccountId,
                     createCounterpart = createCounterpart && !state.counterpartExists,
                     rememberRule = rememberRule && !alreadyRemembered,
+                    // Las casillas solo se mandan si la compra va en cuotas y es un gasto; el
+                    // ViewModel igual las descarta si no calzan.
+                    installmentNumber = installmentNumberText
+                        .toIntOrNull()
+                        ?.takeIf { installmentOn && !isTransfer && direction == Direction.DEBIT },
+                    installmentTotal = installmentTotalText
+                        .toIntOrNull()
+                        ?.takeIf { installmentOn && !isTransfer && direction == Direction.DEBIT },
                     occurredAtMillis = if (occurredAt > 0L) occurredAt else Dates.todayMillis(),
                 )
             },
@@ -540,6 +614,33 @@ fun TransactionEditorScreen(
                 Text("Eliminar movimiento", color = MaterialTheme.colorScheme.error)
             }
         }
+    }
+}
+
+/**
+ * Qué se lee debajo de las casillas de la cuota: qué falta escribir, qué está mal o cuánto queda por
+ * pagar con lo que ya se escribió.
+ *
+ * La cuenta se hace con el monto del movimiento —que en una compra en cuotas es la cuota del mes—
+ * porque es lo único que la app sabe de esta compra sin mirar la cartola.
+ */
+private fun installmentHint(amountText: String, numberText: String, totalText: String): String {
+    val total = totalText.toIntOrNull()
+    val number = numberText.toIntOrNull()
+    if (total == null || total < 2) return "¿En cuántas cuotas? Por ejemplo 12."
+    if (total > Installments.MAX) return "Hasta ${Installments.MAX} cuotas: revisa el número."
+    if (number == null) return "Son $total cuotas: se anota una por mes."
+    if (number < 1 || number > total) return "La cuota va entre 1 y $total."
+    val remaining = total - number
+    val perCharge = Money.parse(amountText)
+    return when {
+        remaining == 0 -> "Cuota $number de $total: con esta queda pagada."
+        perCharge == null ->
+            if (remaining == 1) "Cuota $number de $total · queda 1." else
+                "Cuota $number de $total · quedan $remaining."
+        remaining == 1 -> "Cuota $number de $total · queda 1 por pagar de ${Money.format(perCharge)}."
+        else -> "Cuota $number de $total · quedan $remaining por pagar de " +
+            Money.format(perCharge) + " cada una."
     }
 }
 

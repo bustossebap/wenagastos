@@ -115,6 +115,39 @@ class BackupTest {
     }
 
     @Test
+    fun `una compra en cuotas vuelve con su cuota y su precio`() {
+        val cuota = transfer.copy(
+            id = 21,
+            isTransfer = false,
+            transferAccountId = null,
+            transferGroupId = null,
+            installmentNumber = 3,
+            installmentTotal = 12,
+            originAmount = 600_000L,
+        )
+        val conCuotas = data.copy(transactions = listOf(transfer, cuota))
+
+        assertEquals(conCuotas, Backup.decode(Backup.encode(conCuotas, schemaVersion = 9)))
+    }
+
+    @Test
+    fun `un respaldo v5 se lee como compras pagadas de una vez`() {
+        // El archivo de antes de la Fase 9.3 no trae cuotas: sus movimientos no van en cuotas, que
+        // es distinto de «no se sabe».
+        val text = backupJson(
+            """{"id":1,"accountId":1,"occurredAt":1760000000000,"amount":50000,
+               "merchantRaw":"Altamar Spa","merchantNorm":"altamar spa"}""",
+        )
+
+        val movimiento = Backup.decode(text).transactions.single()
+
+        assertNull(movimiento.installmentNumber)
+        assertNull(movimiento.installmentTotal)
+        assertNull(movimiento.originAmount)
+    }
+
+
+    @Test
     fun `un respaldo v1 reparte sus numeros entre cuenta y tarjetas`() {
         val text = """
             {"app":"Wenagastos","documento":"respaldo","version":1,"cuentas":[
@@ -151,7 +184,7 @@ class BackupTest {
         val text = Backup.encode(data, schemaVersion = 5)
 
         assertTrue(text.startsWith("""{"app":"Wenagastos","documento":"respaldo","""))
-        assertTrue(text.contains("\"version\":5"))
+        assertTrue(text.contains("\"version\":6"))
         assertTrue(text.contains("\"schema\":5"))
         assertTrue(text.contains("\"accountLast4\":\"1234\""))
         assertTrue(text.contains("\"cardLast4\":\"5678\""))

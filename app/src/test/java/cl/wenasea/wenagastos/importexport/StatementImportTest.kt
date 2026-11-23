@@ -204,4 +204,73 @@ class StatementImportTest {
         assertEquals(Direction.CREDIT, sheet.rows[1].direction)
         assertEquals(208_960L, sheet.rows[1].amount)
     }
+
+    @Test
+    fun `una compra en cuotas guarda la cuota del mes y el precio de la compra`() {
+        // Santander: `NºCUOTA` dice en cuál va (`05/06`), `VALOR CUOTA MENSUAL` es la plata del mes
+        // y `MONTO` el precio de la compra. Anotar el monto cada mes es pagar la compra seis veces.
+        val sheet = read(
+            "FECHA;DESCRIPCION;MONTO;VALOR CUOTA MENSUAL;NºCUOTA\r\n" +
+                "09/06/2026;MERCADO PAGO 4 TCOM;26.990;4.498;05/06\r\n" +
+                "10/06/2026;LIDER EXPRESS;12.345;;\r\n",
+        )
+
+        val cuota = sheet.rows[0]
+        assertEquals(4_498L, cuota.amount)
+        assertEquals(5, cuota.installmentNumber)
+        assertEquals(6, cuota.installmentTotal)
+        assertEquals(26_990L, cuota.originAmount)
+
+        // La compra pagada de una vez no queda marcada como cuota.
+        assertNull(sheet.rows[1].installmentNumber)
+        assertNull(sheet.rows[1].installmentTotal)
+        assertNull(sheet.rows[1].originAmount)
+    }
+
+    @Test
+    fun `las cuotas pendientes de falabella se leen con el precio de la compra`() {
+        // Falabella no dice en qué cuota va: dice cuántas faltan. Con el precio de la compra y la
+        // cuota del mes se deduce igual (`MONTO 600.000` / `VALOR CUOTA 50.000` = 12 cuotas).
+        val sheet = read(
+            "FECHA;DESCRIPCION;MONTO;CUOTAS PENDIENTES;VALOR CUOTA\r\n" +
+                "24/09/2026;ALTAMAR SPA;600.000;9;50.000\r\n",
+        )
+
+        val cuota = sheet.rows[0]
+        assertEquals(50_000L, cuota.amount)
+        assertEquals(3, cuota.installmentNumber)
+        assertEquals(12, cuota.installmentTotal)
+        assertEquals(600_000L, cuota.originAmount)
+        assertEquals(Direction.DEBIT, cuota.direction)
+    }
+
+    @Test
+    fun `pagar la tarjeta no es una compra en cuotas`() {
+        // El pago viene con la misma columna de cuotas llena (`0`), pero la plata entra a la
+        // tarjeta: no hay compra que pagar en cuotas.
+        val sheet = read(
+            "FECHA;DESCRIPCION;MONTO;CUOTAS PENDIENTES;VALOR CUOTA\r\n" +
+                "18/11/2026;PAGO TARJETA;208.960;0;-208.960\r\n",
+        )
+
+        val pago = sheet.rows[0]
+        assertEquals(Direction.CREDIT, pago.direction)
+        assertEquals(208_960L, pago.amount)
+        assertNull(pago.installmentNumber)
+        assertNull(pago.installmentTotal)
+        assertNull(pago.originAmount)
+    }
+
+    @Test
+    fun `un precio menor que la cuota no se guarda`() {
+        // Una columna mal leída no puede dejar una compra con precio menor que su propia cuota.
+        val sheet = read(
+            "FECHA;DESCRIPCION;MONTO;VALOR CUOTA;NºCUOTA\r\n" +
+                "09/06/2026;LIDER;1.000;4.498;05/06\r\n",
+        )
+
+        assertEquals(4_498L, sheet.rows[0].amount)
+        assertEquals(5, sheet.rows[0].installmentNumber)
+        assertNull(sheet.rows[0].originAmount)
+    }
 }

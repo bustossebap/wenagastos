@@ -67,6 +67,13 @@ class FakeTransactionDao : TransactionDao {
     override fun observePendingCount(): Flow<Int> =
         state.map { list -> list.count { it.status == TransactionStatus.PENDING } }
 
+    /** Espeja `installmentTotal IS NOT NULL` con `ORDER BY occurredAt ASC, id ASC`. */
+    override fun observeInstallments(): Flow<List<TransactionEntity>> =
+        state.map { list ->
+            list.filter { it.installmentTotal != null }
+                .sortedWith(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
+        }
+
     /**
      * La consulta real mira `account_snapshots`, tabla que este fake no conoce. El motor de
      * captura no pide saldos, así que devuelve vacío en vez de inventar cortes; el cálculo del

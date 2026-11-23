@@ -1,6 +1,7 @@
 package cl.wenasea.wenagastos.importexport
 
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.TextNorm
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -31,6 +32,12 @@ object StatementImport {
         val merchant: String,
         /** Saldo que deja la cartola en esa fila, cuando el banco lo informa. */
         val balance: Long?,
+        /** Cuota de una compra en cuotas (`3` de `12`); `null` cuando no va en cuotas. */
+        val installmentNumber: Int? = null,
+        /** Cuántas cuotas tiene la compra; `null` cuando no va en cuotas. */
+        val installmentTotal: Int? = null,
+        /** Precio de la compra completa, cuando la cartola lo informa (`MONTO ORIGEN`). */
+        val originAmount: Long? = null,
         /** El renglón completo, para poder revisarlo después desde el editor. */
         val rawText: String,
     )
@@ -116,6 +123,13 @@ object StatementImport {
             index != date && movements.count { isMoney(cell(it, index)) } >= fewest
         }
 
+        // La columna de las cuotas no es plata ni una descripción: se reconoce porque sus celdas se
+        // leen como cuotas (`05/06`) y nunca como montos.
+        val installment = (0 until width).firstOrNull { index ->
+            index != date && index !in money &&
+                movements.count { Installments.parseCell(cell(it, index)) != null } >= fewest
+        } ?: -1
+
         // Cargo y abono: dos columnas que nunca vienen llenas en la misma fila.
         val pair = money.indices
             .flatMap { left -> (left + 1 until money.size).map { right -> money[left] to money[right] } }
@@ -143,11 +157,30 @@ object StatementImport {
         }
 
         val balance = money.firstOrNull { name(it).lowercase().startsWith("saldo") } ?: -1
+        // Con una columna de cuotas y dos de plata, una es la cuota del mes y la otra el precio de
+        // la compra. Si el monto elegido ya es la cuota, la otra columna de plata es el precio.
+        val monthly = amount >= 0 && name(amount).lowercase().contains("cuota")
+        val installmentAmount = if (installment < 0 || monthly) {
+            -1
+        } else {
+            money.firstOrNull { index ->
+                index != amount && index != balance &&
+                    name(index).lowercase().let { it.contains("cuota") || it.startsWith("valor") }
+            } ?: -1
+        }
+        val origin = when {
+            installment < 0 || amount < 0 -> -1
+            monthly -> money.firstOrNull { it != amount && it != balance } ?: -1
+            else -> money.firstOrNull { index ->
+                index != amount && index != balance && index != installmentAmount &&
+                    name(index).lowercase().contains("origen")
+            } ?: -1
+        }
         // El comercio tiene que venir en casi todas las filas: una columna que se repite vacía no
         // es la descripción, y un movimiento sin comercio no se puede anotar.
         val filled = maxOf(1, movements.size / 2)
         val merchant = (0 until width)
-            .filter { it != date && it !in money }
+            .filter { it != date && it != installment && it !in money }
             .filter { index -> movements.count { cell(it, index).isNotBlank() } >= filled }
             .maxByOrNull { index -> movements.sumOf { cell(it, index).trim().length } }
             ?: return null
@@ -159,8 +192,21 @@ object StatementImport {
             creditColumn = if (credit >= 0) name(credit) else null,
             amountColumn = if (amount >= 0) name(amount) else null,
             balanceColumn = if (balance >= 0) name(balance) else null,
+            installmentColumn = if (installment >= 0) name(installment) else null,
+            installmentAmountColumn = if (installmentAmount >= 0) name(installmentAmount) else null,
+            originColumn = if (origin >= 0) name(origin) else null,
         )
-        val columns = Columns(date, merchant, debit, credit, amount, balance)
+        val columns = Columns(
+            date = date,
+            merchant = merchant,
+            debit = debit,
+            credit = credit,
+            amount = amount,
+            balance = balance,
+            installment = installment,
+            installmentAmount = installmentAmount,
+            origin = origin,
+        )
         val (parsed, skipped) = rowsOf(rows.drop(first), columns)
         return sheet(parsed, skipped, template)
     }
@@ -215,6 +261,24 @@ object StatementImport {
      */
     private fun parseRow(line: List<String>, columns: Columns): Row? {
         val date = StatementDates.parse(columns.text(line, columns.date)) ?: return null
+        // La cuota de la compra: `05/06` en Santander, cuántas faltan en Falabella. No es plata y
+        // hay que leerla antes que los montos.
+        val installment = Installments.parseCell(columns.text(line, columns.installment))
+        val monthly = StatementNumbers.parse(columns.text(line, columns.installmentAmount))
+        val monto = StatementNumbers.parse(columns.text(line, columns.amount))
+        // En una compra en cuotas, «valor cuota» es la plata de este mes y la columna del monto trae
+        // el precio de la compra entera: anotar el precio cada mes es pagar la compra doce veces.
+        // Y en la cartola de la tarjeta el monto viene vacío en las compras sin cuotas —ahí la plata
+        // del mes está solo en «valor cuota»—, así que esa columna es también el respaldo del monto.
+        val perCharge = installment != null && monthly != null && monthly.value != 0L
+        val charge = if (perCharge) monthly else monto ?: monthly
+        // El precio de la compra: la columna que lo dice, o la del monto cuando la del monto quedó
+        // como precio.
+        val origin = when {
+            perCharge -> StatementNumbers.parse(columns.text(line, columns.origin))?.value
+                ?: monto?.value
+            else -> StatementNumbers.parse(columns.text(line, columns.origin))?.value
+        }
         val direction: Direction
         val amount: Long
         if (columns.debit >= 0 || columns.credit >= 0) {
@@ -235,28 +299,37 @@ object StatementImport {
                 else -> return null
             }
         } else {
-            val monto = StatementNumbers.parse(columns.text(line, columns.amount)) ?: return null
-            if (monto.value == 0L) return null
+            if (charge == null || charge.value == 0L) return null
             direction = when {
-                monto.value < 0 -> Direction.DEBIT
+                charge.value < 0 -> Direction.DEBIT
                 // Con el signo escrito, el "+" es plata que entra.
-                monto.signed -> Direction.CREDIT
+                charge.signed -> Direction.CREDIT
                 // Falabella escribe el pago de la tarjeta en positivo y pone el signo en otra columna
                 // de la misma fila (`MONTO 208.960` con `VALOR CUOTA -208.960`). Sin mirar ahí, pagar
                 // la tarjeta se anotaría como un gasto más.
-                paid(line, columns, monto.value) -> Direction.CREDIT
+                paid(line, columns, charge.value) -> Direction.CREDIT
                 // Sin signo es una compra: así vienen las cartolas de tarjeta.
                 else -> Direction.DEBIT
             }
-            amount = abs(monto.value)
+            amount = abs(charge.value)
         }
         val balance = StatementNumbers.parse(columns.text(line, columns.balance))?.value
+        // Una cuota sólo se anota en las compras: pagar la tarjeta no va en cuotas.
+        val cuota = if (direction == Direction.DEBIT) {
+            Installments.resolve(installment, amount, origin?.let(::abs))
+        } else {
+            null
+        }
         return Row(
             date = date,
             amount = amount,
             direction = direction,
             merchant = describe(columns.text(line, columns.merchant)),
             balance = balance,
+            installmentNumber = cuota?.first,
+            installmentTotal = cuota?.second,
+            // Un precio menor que la cuota de un mes es una columna mal leída, no una compra.
+            originAmount = origin?.let(::abs)?.takeIf { cuota != null && it >= amount },
             rawText = line.joinToString(" · ") { it.trim() }.take(MAX_RAW_TEXT),
         )
     }
@@ -311,6 +384,12 @@ object StatementImport {
         val credit: Int,
         val amount: Int,
         val balance: Int,
+        /** La celda de la cuota (`05/06`, `9`, `1/1`); no trae plata. */
+        val installment: Int = -1,
+        /** La plata que se cobra cada mes, cuando el banco la separa del monto. */
+        val installmentAmount: Int = -1,
+        /** El precio de la compra completa. */
+        val origin: Int = -1,
     ) {
         fun text(row: List<String>, index: Int): String =
             if (index < 0) "" else row.getOrNull(index)?.trim().orEmpty()
@@ -332,6 +411,9 @@ object StatementImport {
                     credit = index(template.creditColumn),
                     amount = index(template.amountColumn),
                     balance = index(template.balanceColumn),
+                    installment = index(template.installmentColumn),
+                    installmentAmount = index(template.installmentAmountColumn),
+                    origin = index(template.originColumn),
                 )
             }
         }

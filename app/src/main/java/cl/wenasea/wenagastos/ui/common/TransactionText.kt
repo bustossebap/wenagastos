@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
+import cl.wenasea.wenagastos.domain.Installments
 import cl.wenasea.wenagastos.domain.transferEnds
 
 /**
@@ -37,7 +38,11 @@ fun transactionSubtitle(
         return "Traspaso · $account"
     }
     val category = transaction.categoryId?.let { categories[it]?.name } ?: "Sin categoría"
-    return "$category · $account"
+    val base = "$category · $account"
+    // Una cuota se anota como cualquier gasto del mes, así que la fila dice en cuál va: sin eso,
+    // «Cuotas por pagar» en Reportes y la lista de Movimientos no se podrían cuadrar a ojo.
+    val installment = Installments.shortLabel(transaction) ?: return base
+    return "$base · $installment"
 }
 
 /** El mismo par de cuentas que se lee en la lista, para el globo del avatar. */
