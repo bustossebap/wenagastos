@@ -273,4 +273,37 @@ class StatementImportTest {
         assertEquals(5, sheet.rows[0].installmentNumber)
         assertNull(sheet.rows[0].originAmount)
     }
+
+    @Test
+    fun `el corte de un ultimo dia con varios movimientos es el del cierre`() {
+        // El saldo se guarda como cierre del dia: si el ultimo dia trae varios movimientos, vale el
+        // del ultimo renglon, no el del primero. Con la cartola de viejo a nuevo, el primero de ese
+        // dia es el que abre la jornada.
+        val sheet = read(
+            "Fecha;Descripción;Cargo;Abono;Saldo\r\n" +
+                "22/11/2026;TRANSFERENCIA DE JUAN;;100.000;100.000\r\n" +
+                "23/11/2026;GIRO CAJERO;5.000;;95.000\r\n" +
+                "23/11/2026;TRANSFERENCIA PARA JUAN;2.000;;93.000\r\n",
+        )
+
+        assertEquals(3, sheet.rows.size)
+        assertEquals(93_000L, sheet.balance)
+        assertEquals(date(2026, 11, 23), sheet.balanceDate)
+    }
+
+    @Test
+    fun `el corte del excel del banco, que viene al reves, es el del primer renglon`() {
+        // El Excel de Falabella lista de lo mas nuevo a lo mas viejo: ahi el cierre del dia es el
+        // primer renglon de ese dia.
+        val sheet = read(
+            "Fecha;Descripción;Cargo;Abono;Saldo\r\n" +
+                "23/11/2026;TRANSFERENCIA PARA JUAN;2.000;;93.000\r\n" +
+                "23/11/2026;GIRO CAJERO;5.000;;95.000\r\n" +
+                "22/11/2026;TRANSFERENCIA DE JUAN;;100.000;100.000\r\n",
+        )
+
+        assertEquals(3, sheet.rows.size)
+        assertEquals(93_000L, sheet.balance)
+        assertEquals(date(2026, 11, 23), sheet.balanceDate)
+    }
 }

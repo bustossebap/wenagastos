@@ -224,16 +224,59 @@ object StatementImport {
 
     /** La hoja con lo que se pudo leer, con el corte en la fila más nueva que trae saldo. */
     private fun sheet(rows: List<Row>, skipped: Int, template: StatementTemplate): Sheet {
-        // La cartola puede venir en cualquier orden: el corte es el de la fecha más nueva.
-        val newest = rows.filter { it.balance != null }.maxByOrNull { it.date }
+        // La cartola puede venir en cualquier orden: el corte es el de la fecha más nueva. Si ese
+        // último día trae varios movimientos, el saldo de cierre es el del último renglón cuando el
+        // archivo va de viejo a nuevo (el PDF del banco) y el del primero cuando va al revés (su
+        // Excel).
+        val withBalance = rows.filter { it.balance != null }
+        val newest = withBalance.maxOfOrNull { it.date }
+        val closing = withBalance.filter { it.date == newest }.let { day ->
+            if (day.size < 2 || !newestFirst(rows)) day.lastOrNull() else day.firstOrNull()
+        }
         return Sheet(
             rows = rows,
             skipped = skipped,
-            balance = newest?.balance,
-            balanceDate = newest?.date,
+            balance = closing?.balance,
+            balanceDate = closing?.date,
             template = template,
         )
     }
+
+    /**
+     * `true` si la cartola viene de lo más nuevo a lo más viejo, como el Excel de Falabella. Lo
+     * dicen las fechas: en un archivo ordenado, cada renglón es más viejo que el de arriba. Cuando
+     * todas las filas son del mismo día —o las fechas vienen revueltas— las fechas no dicen nada y
+     * manda el saldo corrido; sin ninguna de las dos señales se asume de viejo a nuevo, como la
+     * mayoría de las cartolas.
+     */
+    private fun newestFirst(rows: List<Row>): Boolean {
+        for (index in 1 until rows.size) {
+            val previous = rows[index - 1].date
+            val current = rows[index].date
+            if (previous != current) return current < previous
+        }
+        return newestFirstByBalance(rows)
+    }
+
+    /**
+     * El orden según los saldos: en un archivo de viejo a nuevo, el saldo del de abajo es el de
+     * arriba más su propio movimiento; al revés, es el de arriba el que cierra con el suyo. Un par
+     * simétrico —lo que entra es lo que sale— calza en los dos sentidos y no dice nada.
+     */
+    private fun newestFirstByBalance(rows: List<Row>): Boolean {
+        for (index in 1 until rows.size) {
+            val before = rows[index - 1].balance ?: continue
+            val after = rows[index].balance ?: continue
+            val forward = after == before + movement(rows[index])
+            val backward = before == after + movement(rows[index - 1])
+            if (forward != backward) return backward
+        }
+        return false
+    }
+
+    /** El monto con su signo: lo que el movimiento le suma o le resta al saldo. */
+    private fun movement(row: Row): Long =
+        if (row.direction == Direction.CREDIT) row.amount else -row.amount
 
     /**
      * La cabecera del archivo. La plantilla recordada manda; si el banco cambió las columnas, se
