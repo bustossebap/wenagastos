@@ -46,13 +46,6 @@ internal fun ThemeCard(modifier: Modifier = Modifier) {
     Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeader(title = "Tema")
-            Text(
-                text = "De día el papel es crema y la tinta es el texto; de noche el papel es " +
-                    "marino y las cifras se leen en crema. Automático sigue al teléfono.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -74,12 +67,6 @@ internal fun ThemeCard(modifier: Modifier = Modifier) {
                     )
                 }
             }
-            Text(
-                text = "El cambio se aplica en el acto: la pantalla se vuelve a dibujar una vez.",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
         }
     }
 }

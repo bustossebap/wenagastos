@@ -15,7 +15,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,66 +22,30 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
-import cl.wenasea.wenagastos.data.local.entity.CategoryKind
-import cl.wenasea.wenagastos.capture.BankSource
-import cl.wenasea.wenagastos.capture.NotificationAccess
 import cl.wenasea.wenagastos.domain.accountNumber
 import cl.wenasea.wenagastos.domain.cardNumbers
 import cl.wenasea.wenagastos.ui.common.BankLogo
-import cl.wenasea.wenagastos.ui.common.CategoryAvatar
 import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
 import cl.wenasea.wenagastos.ui.common.VmFactories
-import cl.wenasea.wenagastos.ui.common.asColor
-
-/**
- * Nombres de las apps que sabemos leer, para el texto de Ajustes. Sale de [BankSource] para
- * que no se desactualice cada vez que se agrega un banco (ya pasó con Tenpo, Banco de Chile
- * y Banco Falabella).
- */
-private val capturedSources: String = BankSource.entries
-    .filter { it != BankSource.SHELL && it.packages.isNotEmpty() }
-    .joinToString(", ") { it.label }
-
-/** Fuentes que no tienen app y solo se leen por correo (hoy, MACH). */
-private val mailSources: String = BankSource.entries
-    .filter { it != BankSource.SHELL && it.packages.isEmpty() }
-    .joinToString(", ") { it.label }
-
-/** «los avisos de A, B y los correos de MACH», según lo que declare [BankSource]. */
-private val capturedSummary: String = buildString {
-    append("los avisos de ")
-    append(capturedSources)
-    if (mailSources.isNotEmpty()) {
-        append(" y los correos de ")
-        append(mailSources)
-    }
-}
 
 @Composable
 fun SettingsScreen(
-    onOpenDiagnostics: () -> Unit = {},
     onOpenRules: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val container = LocalContainer.current
-    val context = LocalContext.current
     val viewModel: SettingsViewModel = viewModel(factory = VmFactories.settings(container))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     var editTarget by remember { mutableStateOf<AccountEditTarget?>(null) }
-    var accessEnabled by remember { mutableStateOf(NotificationAccess.isEnabled(context)) }
 
     // Guardar, archivar y borrar avisan por `saved`: acá se cierra el diálogo.
     LaunchedEffect(state.saved) {
@@ -90,18 +53,6 @@ fun SettingsScreen(
             editTarget = null
             viewModel.consumeSaved()
         }
-    }
-
-    // El permiso se activa en Ajustes del sistema: hay que releerlo al volver a la app.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                accessEnabled = NotificationAccess.isEnabled(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LazyColumn(
@@ -121,45 +72,6 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-        }
-
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SectionHeader(title = "Captura automática")
-                    Text(
-                        text = if (accessEnabled) {
-                            "Activa. Wenagastos lee $capturedSummary, y los " +
-                                "anota como movimientos."
-                        } else {
-                            "Desactivada. Para que los gastos se anoten solos hay que dar " +
-                                "acceso a las notificaciones."
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (accessEnabled) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        TextButton(
-                            onClick = {
-                                context.startActivity(NotificationAccess.settingsIntent())
-                            },
-                        ) {
-                            Text(if (accessEnabled) "Revisar permiso" else "Activar acceso")
-                        }
-                        TextButton(onClick = onOpenDiagnostics) {
-                            Text("Ver últimos avisos (${state.capturedCount})")
-                        }
-                    }
-                }
             }
         }
 
@@ -265,69 +177,7 @@ fun SettingsScreen(
         }
 
         item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Las categorías de traspaso ya no existen en el catálogo (Fase 9.1); si quedó
-                    // una de antes, no se muestra: un traspaso no se clasifica.
-                    val shown = state.categories.filter { it.kind != CategoryKind.TRANSFER }
-                    SectionHeader(title = "Categorías (${shown.size})")
-                    shown.forEachIndexed { index, category ->
-                        if (index > 0) LedgerRule(modifier = Modifier.padding(top = 10.dp))
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            CategoryAvatar(
-                                emoji = category.emoji,
-                                color = category.colorHex.asColor(),
-                                size = 30,
-                            )
-                            Text(
-                                text = category.name,
-                                style = MaterialTheme.typography.bodyLarge,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Text(
-                                text = category.kind.label,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        item {
             LockCard(lock = container.appLock)
-        }
-
-        item {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    SectionHeader(title = "Privacidad")
-                    Text(
-                        text = "Wenagastos no tiene permiso de Internet: los datos no pueden salir " +
-                            "del teléfono. Lo único que lee son los avisos de las apps del banco, " +
-                            "y solo guarda el texto del aviso cuando reconoce un movimiento.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                    Text(
-                        text = "Además, la base va cifrada (SQLCipher): el archivo no se puede " +
-                            "abrir fuera de este teléfono, porque la llave vive en el llavero " +
-                            "del sistema. Si borras los datos de la app, esa llave se pierde y " +
-                            "solo queda el respaldo .wena.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
-            }
         }
 
         item {

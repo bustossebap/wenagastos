@@ -4,6 +4,7 @@ import androidx.room.TypeConverter
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CaptureOutcome
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
@@ -35,6 +36,12 @@ class Converters {
 
     @TypeConverter
     fun stringToCategoryKind(value: String): CategoryKind = CategoryKind.valueOf(value)
+
+    @TypeConverter
+    fun categoryNatureToString(value: CategoryNature): String = value.name
+
+    @TypeConverter
+    fun stringToCategoryNature(value: String): CategoryNature = CategoryNature.valueOf(value)
 
     @TypeConverter
     fun sourceToString(value: TransactionSource): String = value.name

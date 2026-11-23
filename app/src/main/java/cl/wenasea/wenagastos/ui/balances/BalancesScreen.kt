@@ -154,7 +154,7 @@ private fun TotalCard(state: BalancesUiState) {
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Text(
-                text = "Patrimonio conocido",
+                text = "Patrimonio en cuentas",
                 style = MaterialTheme.typography.labelMedium,
                 color = paleta.heroTexto.copy(alpha = 0.8f),
             )
@@ -177,12 +177,13 @@ private fun TotalCard(state: BalancesUiState) {
             )
             Text(
                 text = when {
-                    state.accountCount == 0 -> "Sin cuentas todavía."
+                    state.cash.isEmpty() -> "Sin cuentas todavía."
                     !state.hasBalances -> "Ninguna cuenta tiene saldo escrito. Toca una cuenta " +
                         "y escribe lo que el banco dice hoy."
                     state.unknownCount == 0 ->
-                        "${state.knownCount} de ${state.accountCount} cuentas con saldo."
-                    else -> "${state.knownCount} de ${state.accountCount} cuentas con saldo; " +
+                        "${state.knownCount} de ${state.cash.size} cuentas con saldo. Las " +
+                            "tarjetas de crédito van aparte: su deuda no resta acá."
+                    else -> "${state.knownCount} de ${state.cash.size} cuentas con saldo; " +
                         "las otras ${state.unknownCount} no suman hasta que escribas uno."
                 },
                 style = MaterialTheme.typography.bodySmall,

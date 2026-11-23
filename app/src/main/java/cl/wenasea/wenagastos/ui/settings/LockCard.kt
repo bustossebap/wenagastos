@@ -33,23 +33,24 @@ internal fun LockCard(
     Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             SectionHeader(title = "Bloqueo al abrir")
-            Text(
-                text = when {
-                    lock.enabled && !canProtect ->
-                        "El bloqueo está activado, pero este teléfono ya no tiene PIN ni huella: " +
-                            "mientras siga así la app se abre sin preguntar. Configura un bloqueo " +
-                            "de pantalla en Ajustes del sistema."
-                    canProtect ->
-                        "Al abrir Wenagastos se pide la huella o el PIN del teléfono. Después de " +
-                            "un minuto en segundo plano se vuelve a pedir."
-                    else ->
-                        "Este teléfono no tiene PIN, patrón ni huella. Configura un bloqueo de " +
-                            "pantalla en Ajustes del sistema para poder activarlo."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 8.dp),
-            )
+            // Sin el párrafo de cómo funciona, pero el interruptor no puede quedar apagado sin
+            // decir por qué: cuando el teléfono no tiene credencial, se dice en una línea.
+            if (!canProtect) {
+                Text(
+                    text = if (lock.enabled) {
+                        "Este teléfono ya no tiene PIN ni huella: la app se abre sin preguntar."
+                    } else {
+                        "Este teléfono no tiene PIN ni huella, así que no hay nada que pedir."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (lock.enabled) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -69,9 +70,9 @@ internal fun LockCard(
             }
             if (lock.enabled) {
                 Text(
-                    text = "El bloqueo no cifra la base: es una cortina para quien tome el " +
-                        "teléfono desbloqueado.",
-                    style = MaterialTheme.typography.bodySmall,
+                    text = "Es una cortina para quien tome el teléfono desbloqueado; la base ya " +
+                        "va cifrada.",
+                    style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

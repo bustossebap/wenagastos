@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.data.local.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -89,6 +90,12 @@ data class CategoryEntity(
     val monthlyBudget: Long? = null,
     val sortOrder: Int = 0,
     val isArchived: Boolean = false,
+    /**
+     * Fijo, variable o ahorro (Fase 9.5). El valor por defecto es el de la migración 7 → 8: una
+     * categoría vieja que no se clasificó queda como variable, que es lo que menos supone. En una
+     * categoría de ingreso se guarda [CategoryNature.VARIABLE] y no se lee.
+     */
+    @ColumnInfo(defaultValue = "VARIABLE") val nature: CategoryNature = CategoryNature.VARIABLE,
 )
 
 @Entity(

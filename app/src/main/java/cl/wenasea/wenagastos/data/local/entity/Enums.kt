@@ -30,6 +30,20 @@ enum class CategoryKind(val label: String) {
     TRANSFER("Transferencia"),
 }
 
+/**
+ * De qué clase es un gasto (Fase 9.5): lo que se paga sí o sí, lo que depende del mes y la plata
+ * que se guarda. Una categoría de gasto tiene una sola naturaleza y el editor la usa para ofrecer
+ * solo las categorías del tipo elegido: quien anota un arriendo no quiere ver «Gustitos» al lado.
+ *
+ * El ahorro está acá aunque no sea un gasto: sale de la cuenta igual y hay que verlo aparte, no
+ * mezclado con lo que se consumió.
+ */
+enum class CategoryNature(val label: String) {
+    FIXED("Fijo"),
+    VARIABLE("Variable"),
+    SAVINGS("Ahorro"),
+}
+
 enum class TransactionSource(val label: String) {
     MANUAL("Manual"),
     NOTIFICATION("Notificación"),

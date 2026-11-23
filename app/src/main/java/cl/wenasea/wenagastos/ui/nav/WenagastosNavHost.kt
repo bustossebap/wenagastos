@@ -143,6 +143,7 @@ fun WenagastosNavHost() {
                     onSeeReports = { openTab(Routes.REPORTS) },
                     onOpenBalances = { navController.navigate(Routes.BALANCES) },
                     onOpenSettings = { openTab(Routes.SETTINGS) },
+                    onOpenDiagnostics = { navController.navigate(Routes.CAPTURE) },
                 )
             }
             composable(
@@ -168,7 +169,6 @@ fun WenagastosNavHost() {
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(
-                    onOpenDiagnostics = { navController.navigate(Routes.CAPTURE) },
                     onOpenRules = { navController.navigate(Routes.RULES) },
                 )
             }

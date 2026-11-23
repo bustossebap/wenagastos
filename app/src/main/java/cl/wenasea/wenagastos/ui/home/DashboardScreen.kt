@@ -60,6 +60,7 @@ fun DashboardScreen(
     onSeeReports: () -> Unit = {},
     onOpenBalances: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenDiagnostics: () -> Unit = {},
 ) {
     val container = LocalContainer.current
     val viewModel: LedgerViewModel = viewModel(factory = VmFactories.ledger(container))
@@ -97,7 +98,7 @@ fun DashboardScreen(
             }
         }
 
-        item { CaptureOffCard() }
+        item { CaptureOffCard(onOpenDiagnostics = onOpenDiagnostics) }
 
         item { BackupDueCard(onOpenSettings = onOpenSettings) }
 

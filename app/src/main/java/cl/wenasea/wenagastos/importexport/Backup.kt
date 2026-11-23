@@ -5,6 +5,7 @@ import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
@@ -57,8 +58,11 @@ object Backup {
      * v4 agrega `creditLimit`, `statementDay` y `paymentDay` a las cuentas (Fase 7.1). Un v3 se
      * lee igual: las tres quedan en `null`, que es "no se sabe", y la tarjeta se muestra como
      * antes hasta que se configure.
+     *
+     * v5 agrega `nature` a las categorías (Fase 9.5). Un v4 se lee igual: toda categoría sin el
+     * campo queda `VARIABLE`, que es el mismo valor que le puso la migración de la base.
      */
-    const val VERSION = 4
+    const val VERSION = 5
 
     fun encode(
         data: BackupData,
@@ -110,6 +114,7 @@ object Backup {
         "monthlyBudget" to category.monthlyBudget,
         "sortOrder" to category.sortOrder,
         "isArchived" to category.isArchived,
+        "nature" to category.nature.name,
     )
 
     private fun ruleJson(rule: MerchantRuleEntity): Map<String, Any?> = linkedMapOf(
@@ -268,6 +273,8 @@ object Backup {
         monthlyBudget = map.long("monthlyBudget"),
         sortOrder = map.long("sortOrder")?.toInt() ?: 0,
         isArchived = map.bool("isArchived", false),
+        nature = CategoryNature.entries.firstOrNull { it.name == map.string("nature") }
+            ?: CategoryNature.VARIABLE,
     )
 
     private fun toRule(map: Map<String, Any?>): MerchantRuleEntity = MerchantRuleEntity(

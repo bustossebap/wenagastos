@@ -17,21 +17,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.domain.AccountBalance
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.ui.common.BankLogo
+import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.SectionHeader
 import cl.wenasea.wenagastos.ui.common.VmFactories
 
 /**
- * Tarjeta de saldos del inicio: el patrimonio y **una fila por cuenta**, con el logo del banco.
+ * Tarjeta de saldos del inicio, en dos bloques que no se mezclan.
  *
- * Antes agrupaba por banco y solo decía el total de cada uno, que es un número que no sirve para
- * pagar nada: lo que se necesita saber es cuánto hay en la cuenta de la que se va a girar. El
- * patrimonio se calcula igual —la suma de los saldos conocidos—, así que tocar un saldo en el
- * detalle sigue corrigiendo esta tarjeta.
+ * Arriba, **la plata**: una fila por cuenta de efectivo (cta. cte., ahorro/billetera, efectivo) y
+ * el patrimonio como la suma de esa plata. Abajo, **lo que se debe**: una fila por tarjeta de
+ * crédito con su deuda y el cupo disponible sumado. La deuda de una tarjeta no se resta del
+ * patrimonio —no es plata que se haya ido de la cuenta, es una compra que se paga después y tiene
+ * su propio cupo—, así que el patrimonio es lo que se puede girar.
  *
  * Sin ningún saldo escrito igual se muestra: es la única puerta para empezar a anotarlos.
  */
@@ -82,13 +83,8 @@ fun BalancesSummaryCard(
                 )
             }
 
-            state.institutions.forEach { group ->
-                group.accounts.forEach { row ->
-                    AccountBalanceLine(
-                        institution = group.institution,
-                        row = row,
-                    )
-                }
+            state.cash.forEach { row ->
+                AccountBalanceLine(row = row)
             }
 
             val unknown = state.unknownCount
@@ -104,19 +100,60 @@ fun BalancesSummaryCard(
                     modifier = Modifier.padding(top = 10.dp),
                 )
             }
+
+            if (state.hasCards) {
+                LedgerRule(modifier = Modifier.padding(top = 14.dp))
+                Row(
+                    modifier = Modifier.padding(top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "Tarjetas de crédito",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = creditLabel(state),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (state.creditKnown == 0) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+                state.cards.forEach { row ->
+                    CardBalanceLine(row = row, available = state.credit[row.account.id]?.available)
+                }
+                if (state.creditKnown < state.cards.size) {
+                    Text(
+                        text = "El cupo disponible suma solo las tarjetas con cupo y deuda anotados.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
         }
     }
 }
 
+/** «Cupo $2.126.964», o el aviso de que todavía no se sabe. */
+private fun creditLabel(state: BalancesUiState): String = if (state.creditKnown == 0) {
+    "Cupo sin anotar"
+} else {
+    "Cupo ${Money.format(state.creditAvailable)}"
+}
+
 /**
- * Una cuenta: logo del banco, nombre y saldo. La cuenta archivada ya no llega hasta acá —el
- * cálculo la filtra— y la que nunca tuvo corte dice «Sin saldo» en gris: un `$0` sería mentira.
+ * Una cuenta de efectivo: logo del banco, nombre y saldo. La cuenta archivada ya no llega hasta
+ * acá —el cálculo la filtra— y la que nunca tuvo corte dice «Sin saldo» en gris: un `$0` sería
+ * mentira.
  */
 @Composable
-private fun AccountBalanceLine(
-    institution: Institution,
-    row: AccountBalance,
-) {
+private fun AccountBalanceLine(row: AccountBalance) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -125,7 +162,7 @@ private fun AccountBalanceLine(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         BankLogo(
-            institution = institution,
+            institution = row.account.institution,
             colorHex = row.account.colorHex,
             size = 22,
         )
@@ -148,3 +185,56 @@ private fun AccountBalanceLine(
         )
     }
 }
+
+/**
+ * Una tarjeta de crédito: la deuda en rojo —es plata que se debe— y, debajo, lo que queda de cupo.
+ * Sin deuda escrita no se inventa un cupo completo: se dice qué falta.
+ */
+@Composable
+private fun CardBalanceLine(row: AccountBalance, available: Long?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        BankLogo(
+            institution = row.account.institution,
+            colorHex = row.account.colorHex,
+            size = 22,
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = row.account.name,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = when {
+                    row.balance == null -> "Sin deuda anotada"
+                    available == null -> "Cupo sin configurar"
+                    else -> "Disponible ${Money.format(available)}"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            text = row.balance?.let { balance ->
+                Money.format(if (balance < 0) -balance else balance)
+            } ?: "—",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = when {
+                row.balance == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                row.balance!! < 0 -> MaterialTheme.colorScheme.error
+                else -> MaterialTheme.colorScheme.onSurface
+            },
+        )
+    }
+}
+

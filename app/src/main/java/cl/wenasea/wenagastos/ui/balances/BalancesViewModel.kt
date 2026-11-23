@@ -8,6 +8,7 @@ import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.SnapshotRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.AccountBalance
 import cl.wenasea.wenagastos.domain.Balances
 import cl.wenasea.wenagastos.domain.Credit
 import cl.wenasea.wenagastos.domain.CreditUsage
@@ -27,16 +28,42 @@ data class BalancesUiState(
     val credit: Map<Long, CreditUsage> = emptyMap(),
     val loaded: Boolean = false,
 ) {
-    /** Suma de lo que se sabe: el patrimonio, no el saldo de una cuenta. */
-    val total: Long get() = institutions.sumOf { it.total }
+    /** Todas las cuentas activas, en el orden del cálculo (por id). */
+    val rows: List<AccountBalance> get() = institutions.flatMap { it.accounts }
 
-    val accountCount: Int get() = institutions.sumOf { it.accounts.size }
+    /** La plata que hay: cta. cte., ahorro/billetera y efectivo. */
+    val cash: List<AccountBalance> get() = rows.filter { it.account.kind != AccountKind.CREDIT }
 
-    val knownCount: Int get() = institutions.sumOf { it.known }
+    /** Lo que se debe: las tarjetas de crédito van aparte de la plata. */
+    val cards: List<AccountBalance> get() = rows.filter { it.account.kind == AccountKind.CREDIT }
 
-    val unknownCount: Int get() = institutions.sumOf { it.unknown }
+    /**
+     * El patrimonio es **solo el efectivo**: la suma de los saldos conocidos de las cuentas.
+     * La deuda de una tarjeta no se resta acá, porque no es plata que se haya ido de la cuenta
+     * (la tarjeta tiene su propio bloque, con su cupo) y restarla dejaría un patrimonio que no
+     * es lo que se puede girar.
+     */
+    val total: Long get() = cash.sumOf { it.balance ?: 0L }
+
+    val accountCount: Int get() = rows.size
+
+    val knownCount: Int get() = cash.count { it.known }
+
+    val unknownCount: Int get() = cash.size - knownCount
 
     val hasBalances: Boolean get() = knownCount > 0
+
+    val hasCards: Boolean get() = cards.isNotEmpty()
+
+    /** Suma de lo que queda disponible en las tarjetas que tienen cupo y deuda anotados. */
+    val creditAvailable: Long get() =
+        cards.sumOf { row -> credit[row.account.id]?.available ?: 0L }
+
+    /** Suma de los cupos escritos, para decir «de cuánto». */
+    val creditLimit: Long get() = cards.sumOf { it.account.creditLimit ?: 0L }
+
+    /** Cuántas tarjetas aportan al cupo disponible; el resto no tiene cupo o deuda escrita. */
+    val creditKnown: Int get() = cards.count { credit[it.account.id]?.available != null }
 }
 
 /**

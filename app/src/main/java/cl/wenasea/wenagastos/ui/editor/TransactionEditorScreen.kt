@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
@@ -51,7 +52,6 @@ import cl.wenasea.wenagastos.ui.common.LocalContainer
 import cl.wenasea.wenagastos.ui.common.VmFactories
 import cl.wenasea.wenagastos.ui.common.WenaButton
 import cl.wenasea.wenagastos.ui.common.WenaChip
-import cl.wenasea.wenagastos.ui.common.WenaSwitch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +70,9 @@ fun TransactionEditorScreen(
     var categoryId by rememberSaveable { mutableLongStateOf(-1L) }
     var direction by rememberSaveable { mutableStateOf(Direction.DEBIT) }
     var isTransfer by rememberSaveable { mutableStateOf(false) }
+    // El tipo de gasto se elige a mano; si queda en `null` sigue a la categoría ya puesta, que es
+    // lo que hace falta al abrir un movimiento viejo.
+    var chosenType by rememberSaveable { mutableStateOf<ExpenseType?>(null) }
     var occurredAt by rememberSaveable { mutableLongStateOf(0L) }
     var showDatePicker by rememberSaveable { mutableStateOf(false) }
     var prefilled by rememberSaveable { mutableStateOf(false) }
@@ -142,13 +145,19 @@ fun TransactionEditorScreen(
         if (state.saved) onDone()
     }
 
+    // La naturaleza que se está pidiendo: la que se tocó, o la de la categoría ya puesta (al
+    // editar un movimiento viejo) para que sus chips aparezcan donde corresponde.
+    val storedCategory = state.categories.firstOrNull { it.id == categoryId }
+    val spendType = chosenType
+        ?: storedCategory?.let { category -> ExpenseType.of(category.nature) }
+        ?: ExpenseType.VARIABLE
     val visibleCategories = state.categories.filter { category ->
-        if (isTransfer) {
+        when {
             // Un traspaso no lleva categoría: no es gasto ni ingreso.
-            false
-        } else {
-            category.kind ==
-                if (direction == Direction.DEBIT) CategoryKind.EXPENSE else CategoryKind.INCOME
+            isTransfer -> false
+            direction == Direction.DEBIT ->
+                category.kind == CategoryKind.EXPENSE && category.nature == spendType.nature
+            else -> category.kind == CategoryKind.INCOME
         }
     }
     val effectiveCategoryId = categoryId.takeIf { id ->
@@ -212,30 +221,57 @@ fun TransactionEditorScreen(
             )
         }
 
+        // El tipo de gasto va antes que la categoría: primero se dice qué clase de gasto es y
+        // después se elige entre las categorías de esa clase. En un ingreso no hay fijo ni
+        // variable, así que solo quedan «Ingreso» y «Traspaso».
+        Text(
+            text = "Tipo",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Traspaso entre mis cuentas",
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                Text(
-                    text = "Mueve plata de una cuenta a otra: no suma en gastos ni en ingresos.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            if (direction == Direction.DEBIT) {
+                ExpenseType.entries.forEach { option ->
+                    WenaChip(
+                        text = option.label,
+                        selected = !isTransfer && spendType == option,
+                        onClick = {
+                            isTransfer = false
+                            chosenType = option
+                        },
+                    )
+                }
+            } else {
+                WenaChip(
+                    text = "Ingreso",
+                    selected = !isTransfer,
+                    onClick = { isTransfer = false },
                 )
             }
-            WenaSwitch(
-                checked = isTransfer,
-                onCheckedChange = { checked ->
-                    isTransfer = checked
-                    // Un traspaso no tiene categoría: si se marca, se suelta la que estuviera puesta.
-                    if (checked) categoryId = -1L
+            WenaChip(
+                text = "Traspaso",
+                selected = isTransfer,
+                onClick = {
+                    isTransfer = true
+                    // Un traspaso no tiene categoría: si se marca, se suelta la que estuviera.
+                    categoryId = -1L
                 },
             )
         }
+        Text(
+            text = if (isTransfer) {
+                "Mueve plata de una cuenta a otra: no suma en gastos ni en ingresos."
+            } else if (direction == Direction.DEBIT) {
+                "Abajo se ofrecen las categorías de este tipo, no todas."
+            } else {
+                "Un ingreso no se clasifica por tipo: se elige la categoría que corresponda."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         OutlinedTextField(
             value = amountText,
@@ -393,10 +429,26 @@ fun TransactionEditorScreen(
 
         if (!isTransfer) {
             Text(
-                text = "Categoría",
+                text = if (direction == Direction.DEBIT) {
+                    "Categoría · ${spendType.label}"
+                } else {
+                    "Categoría"
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (visibleCategories.isEmpty()) {
+                Text(
+                    text = if (direction == Direction.DEBIT) {
+                        "No hay categorías de tipo ${spendType.label}. Se crean en Reportes → " +
+                            "Presupuestos → Editar."
+                    } else {
+                        "No hay categorías de ingreso. Se crean en Reportes → Presupuestos → Editar."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(visibleCategories, key = { it.id }) { category ->
                     WenaChip(
@@ -490,3 +542,25 @@ fun TransactionEditorScreen(
         }
     }
 }
+
+/**
+ * El tipo de gasto que se elige antes de la categoría. Los tres primeros son la naturaleza de la
+ * categoría (`CategoryNature`); el traspaso no es un gasto ni lleva categoría, pero se elige en el
+ * mismo lugar porque es la misma pregunta: «¿qué es esto?».
+ *
+ * Vive acá y no en el dominio porque no se guarda: la naturaleza queda en la categoría y el
+ * traspaso en `TransactionEntity.isTransfer`. Esto es solo el orden en que se pregunta.
+ */
+private enum class ExpenseType(val label: String, val nature: CategoryNature) {
+    FIXED("Fijo", CategoryNature.FIXED),
+    VARIABLE("Variable", CategoryNature.VARIABLE),
+    SAVINGS("Ahorro", CategoryNature.SAVINGS),
+    ;
+
+    companion object {
+        /** La naturaleza de una categoría, como tipo elegible. Nunca devuelve `null`. */
+        fun of(nature: CategoryNature): ExpenseType =
+            entries.firstOrNull { it.nature == nature } ?: VARIABLE
+    }
+}
+

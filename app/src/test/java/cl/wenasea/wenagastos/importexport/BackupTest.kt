@@ -5,6 +5,7 @@ import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.MerchantRuleEntity
@@ -56,6 +57,7 @@ class BackupTest {
         monthlyBudget = 150_000L,
         sortOrder = 10,
         isArchived = false,
+        nature = CategoryNature.FIXED,
     )
     private val rule = MerchantRuleEntity(
         id = 3,
@@ -149,13 +151,32 @@ class BackupTest {
         val text = Backup.encode(data, schemaVersion = 5)
 
         assertTrue(text.startsWith("""{"app":"Wenagastos","documento":"respaldo","""))
-        assertTrue(text.contains("\"version\":4"))
+        assertTrue(text.contains("\"version\":5"))
         assertTrue(text.contains("\"schema\":5"))
         assertTrue(text.contains("\"accountLast4\":\"1234\""))
         assertTrue(text.contains("\"cardLast4\":\"5678\""))
         assertTrue(text.contains("\"creditLimit\":1500000"))
         assertTrue(text.contains("\"statementDay\":25"))
+        assertTrue(text.contains("\"nature\":\"FIXED\""))
         assertTrue(text.contains("\"saldos\":[{"))
+    }
+
+    /**
+     * Un respaldo v4 (antes de la naturaleza) se sigue leyendo: la categoría queda variable, que
+     * es el mismo valor por defecto que le puso la migración de la base.
+     */
+    @Test
+    fun `un respaldo sin naturaleza deja la categoria como variable`() {
+        val text = """
+            {"app":"Wenagastos","documento":"respaldo","version":4,"schema":7,"categorias":[
+              {"id":10,"name":"Supermercado","emoji":"🛒","colorHex":"#2E7D32","kind":"EXPENSE",
+               "sortOrder":10,"isArchived":false}]}
+        """.trimIndent()
+
+        val category = Backup.decode(text).categories.single()
+
+        assertEquals("Supermercado", category.name)
+        assertEquals(CategoryNature.VARIABLE, category.nature)
     }
 
     @Test

@@ -81,6 +81,10 @@ fun ReportsScreen(
     var expandedCategory by rememberSaveable { mutableStateOf<Long?>(null) }
     var showUncategorized by rememberSaveable { mutableStateOf(false) }
     var editingCategoryId by rememberSaveable { mutableStateOf<Long?>(null) }
+    // El administrador de categorías vive acá: «Editar» abre la lista y de ahí se sale a una
+    // categoría concreta (para cambiarla) o al alta de una nueva.
+    var showCategoryList by rememberSaveable { mutableStateOf(false) }
+    var categoryTarget by remember { mutableStateOf<CategoryTarget?>(null) }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -145,6 +149,7 @@ fun ReportsScreen(
             BudgetsCard(
                 state = state,
                 onEdit = { editingCategoryId = it },
+                onManageCategories = { showCategoryList = true },
             )
         }
     }
@@ -160,7 +165,45 @@ fun ReportsScreen(
             },
         )
     }
+
+    if (showCategoryList) {
+        CategoryManagerDialog(
+            categories = state.categoriesById.values.toList(),
+            onEdit = { category ->
+                showCategoryList = false
+                categoryTarget = CategoryTarget(category)
+            },
+            onAdd = {
+                showCategoryList = false
+                categoryTarget = CategoryTarget(null)
+            },
+            onDismiss = { showCategoryList = false },
+        )
+    }
+
+    categoryTarget?.let { target ->
+        val edited = target.category
+        CategoryEditDialog(
+            category = edited,
+            others = state.categoriesById.values.filter { it.id != edited?.id },
+            onDismiss = { categoryTarget = null },
+            onSave = { fields ->
+                viewModel.saveCategory(edited, fields)
+                categoryTarget = null
+            },
+            onArchive = {
+                edited?.let(viewModel::archiveCategory)
+                categoryTarget = null
+            },
+        )
+    }
 }
+
+/**
+ * Qué categoría se está editando: `category = null` es el alta. El `null` del estado es «no hay
+ * diálogo», que es distinto de «diálogo con categoría nueva».
+ */
+private data class CategoryTarget(val category: CategoryEntity?)
 
 
 /**
@@ -466,16 +509,25 @@ private data class BudgetRow(
 )
 
 
-/** Presupuestos: el total y cada categoría con tope o con gasto este mes. */
+/** Presupuestos: el total, cada categoría con tope o con gasto este mes y la puerta a editarlas. */
 @Composable
-private fun BudgetsCard(state: ReportsUiState, onEdit: (Long) -> Unit) {
+private fun BudgetsCard(
+    state: ReportsUiState,
+    onEdit: (Long) -> Unit,
+    onManageCategories: () -> Unit,
+) {
     val rows = remember(state.categories, state.categoriesById) { budgetRows(state) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            SectionHeader(title = "Presupuestos")
+            SectionHeader(
+                title = "Presupuestos",
+                actionLabel = "Editar",
+                onAction = onManageCategories,
+            )
             if (rows.isEmpty()) {
                 Text(
-                    text = "Crea una categoría de gasto en Ajustes para poder ponerle un presupuesto.",
+                    text = "Crea una categoría de gasto con «Editar» para poder ponerle un " +
+                        "presupuesto.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp),
@@ -587,7 +639,8 @@ private fun BudgetRowView(row: BudgetRow, onEdit: (Long) -> Unit) {
                     )
                 }
                 Text(
-                    text = status?.let { budgetOfLabel(it) } ?: "Gastado ${Money.format(row.spent)}",
+                    text = status?.let { "${row.category.nature.label} · ${budgetOfLabel(it)}" }
+                        ?: "${row.category.nature.label} · Gastado ${Money.format(row.spent)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

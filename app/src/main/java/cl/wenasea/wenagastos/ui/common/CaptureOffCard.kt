@@ -1,6 +1,9 @@
 package cl.wenasea.wenagastos.ui.common
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -23,9 +26,15 @@ import cl.wenasea.wenagastos.capture.NotificationAccess
  *
  * Va en papel con la tecla de terracota al canto, no en `errorContainer`: el rosado teñía la
  * tarjeta entera y no era de la paleta.
+ *
+ * Esta es la única puerta a [onOpenDiagnostics] desde que Ajustes dejó de tener su sección de
+ * captura: el caso de uso es justamente «no me llega nada», y ahí se ven los últimos avisos.
  */
 @Composable
-fun CaptureOffCard(modifier: Modifier = Modifier) {
+fun CaptureOffCard(
+    onOpenDiagnostics: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var enabled by remember { mutableStateOf(NotificationAccess.isEnabled(context)) }
 
@@ -42,13 +51,17 @@ fun CaptureOffCard(modifier: Modifier = Modifier) {
 
     if (enabled) return
 
-    WenaNotice(
-        accent = MaterialTheme.colorScheme.error,
-        title = "La captura está apagada",
-        body = "Los avisos de tus bancos no se están leyendo. Si das acceso a las " +
-            "notificaciones, las compras se anotan solas.",
-        modifier = modifier,
-        actionLabel = "Activar",
-        onAction = { context.startActivity(NotificationAccess.settingsIntent()) },
-    )
+    Column(modifier = modifier) {
+        WenaNotice(
+            accent = MaterialTheme.colorScheme.error,
+            title = "La captura está apagada",
+            body = "Los avisos de tus bancos no se están leyendo. Si das acceso a las " +
+                "notificaciones, las compras se anotan solas.",
+            actionLabel = "Activar",
+            onAction = { context.startActivity(NotificationAccess.settingsIntent()) },
+        )
+        if (onOpenDiagnostics != null) {
+            TextButton(onClick = onOpenDiagnostics) { Text("Ver últimos avisos") }
+        }
+    }
 }

@@ -59,7 +59,7 @@ abstract class WenagastosDatabase : RoomDatabase() {
 
     companion object {
         const val NAME = "wenagastos.db"
-        const val VERSION = 7
+        const val VERSION = 8
 
         /** Fase 2: tabla de diagnóstico de la captura por notificaciones. */
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -141,6 +141,81 @@ abstract class WenagastosDatabase : RoomDatabase() {
             }
         }
 
-        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_4_5)
+        /**
+         * Fase 9.5: `categories.nature` (fijo, variable o ahorro) y el catálogo que faltaba.
+         *
+         * La columna entra con `DEFAULT 'VARIABLE'` porque `NOT NULL` sin valor por defecto no se
+         * puede agregar a una tabla con filas, y porque es lo que menos supone: una categoría sin
+         * clasificar es variable hasta que se diga otra cosa. Después se marcan las pocas que son
+         * fijas por nombre, sin tocar nada más.
+         *
+         * Las categorías nuevas se insertan una por una con `WHERE NOT EXISTS` por nombre: la
+         * migración tiene que poder correr sobre una base donde el usuario ya creó, por ejemplo,
+         * «Arriendo» a mano, y no puede duplicarla ni fallar. Se hace acá y no en [Seeder] porque
+         * el seeder solo corre con la tabla vacía, o sea en una instalación nueva.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `categories` ADD COLUMN `nature` TEXT NOT NULL DEFAULT 'VARIABLE'",
+                )
+                db.execSQL(
+                    "UPDATE `categories` SET `nature` = 'FIXED' WHERE `name` IN " +
+                        "('Servicios básicos', 'Suscripciones', 'Arriendo', 'Educación')",
+                )
+                db.execSQL(
+                    "UPDATE `categories` SET `nature` = 'SAVINGS' WHERE `name` IN " +
+                        "('Ahorro', 'Fondo de emergencia', 'APV', 'Inversiones')",
+                )
+                NEW_CATEGORIES.forEach { category ->
+                    db.execSQL(
+                        """
+                        INSERT INTO `categories`
+                            (`name`, `emoji`, `colorHex`, `kind`, `monthlyBudget`, `sortOrder`,
+                                `isArchived`, `nature`)
+                        SELECT '${category.name}', '${category.emoji}', '${category.colorHex}',
+                            'EXPENSE', NULL, ${category.sortOrder}, 0, '${category.nature}'
+                        WHERE NOT EXISTS (
+                            SELECT 1 FROM `categories` WHERE `name` = '${category.name}'
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
+        }
+
+        /**
+         * Las categorías que se agregaron en la Fase 9.5, con su naturaleza. La lista vive acá
+         * —aunque el catálogo inicial esté en [cl.wenasea.wenagastos.data.Seeder]— porque la
+         * migración es SQL y no puede llamar a Kotlin a mitad de una transacción de Room.
+         */
+        private val NEW_CATEGORIES = listOf(
+            NewCategory("Hogar", "🛋️", "#795548", 45, "VARIABLE"),
+            NewCategory("Arriendo", "🔑", "#5E35B1", 75, "FIXED"),
+            NewCategory("Ropa", "👕", "#8E24AA", 115, "VARIABLE"),
+            NewCategory("Home Studio", "🎧", "#3949AB", 125, "VARIABLE"),
+            NewCategory("Entretenimiento", "🎬", "#D81B60", 135, "VARIABLE"),
+            NewCategory("Cuidado personal", "🧴", "#009688", 145, "VARIABLE"),
+            NewCategory("Taxi", "🚕", "#FB8C00", 155, "VARIABLE"),
+            NewCategory("Regalos", "🎁", "#E91E63", 165, "VARIABLE"),
+            NewCategory("Apuestas", "🎲", "#6D4C41", 175, "VARIABLE"),
+            NewCategory("Servicios opcionales", "📶", "#1E88E5", 185, "VARIABLE"),
+            NewCategory("Empresa", "🏢", "#37474F", 190, "VARIABLE"),
+            NewCategory("Ahorro", "🐷", "#2E7D32", 195, "SAVINGS"),
+            NewCategory("Fondo de emergencia", "🛟", "#00796B", 197, "SAVINGS"),
+            NewCategory("APV", "🏦", "#283593", 198, "SAVINGS"),
+            NewCategory("Inversiones", "💹", "#00695C", 199, "SAVINGS"),
+        )
+
+        /** Una fila de [NEW_CATEGORIES], en el orden en que la migración la escribe. */
+        private data class NewCategory(
+            val name: String,
+            val emoji: String,
+            val colorHex: String,
+            val sortOrder: Int,
+            val nature: String,
+        )
+
+        val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_4_5, MIGRATION_7_8)
     }
 }

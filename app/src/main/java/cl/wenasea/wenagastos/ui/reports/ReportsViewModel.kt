@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
+import cl.wenasea.wenagastos.data.local.entity.CategoryKind
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
 import cl.wenasea.wenagastos.data.repo.TransactionRepository
+import cl.wenasea.wenagastos.domain.CategoryFields
 import cl.wenasea.wenagastos.domain.CategoryTotal
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.MonthPoint
@@ -95,6 +97,56 @@ class ReportsViewModel(
     /** Presupuesto mensual de una categoría; `null` lo quita. */
     fun setBudget(categoryId: Long, amount: Long?) {
         viewModelScope.launch { categories.setMonthlyBudget(categoryId, amount) }
+    }
+
+    /**
+     * Alta o edición de una categoría desde Reportes → Presupuestos.
+     *
+     * Una nueva entra al final de su grupo: el orden es el mayor `sortOrder` del mismo tipo más
+     * cinco, así no se cuela entre las que el usuario ya tiene ordenadas. Si la categoría cambió
+     * de tipo, el orden se recalcula en el grupo nuevo; si no, se conserva.
+     */
+    fun saveCategory(original: CategoryEntity?, fields: CategoryFields) {
+        viewModelScope.launch {
+            val order = if (original == null || original.kind != fields.kind) {
+                nextSortOrder(fields.kind)
+            } else {
+                original.sortOrder
+            }
+            val base = original ?: CategoryEntity(
+                name = fields.name,
+                emoji = fields.emoji,
+                colorHex = fields.colorHex,
+                kind = fields.kind,
+                sortOrder = order,
+            )
+            categories.update(
+                base.copy(
+                    name = fields.name,
+                    emoji = fields.emoji,
+                    colorHex = fields.colorHex,
+                    kind = fields.kind,
+                    monthlyBudget = fields.monthlyBudget,
+                    nature = fields.nature,
+                    sortOrder = order,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Saca la categoría del catálogo. No se borra: los movimientos ya anotados le apuntan y
+     * perderían su clasificación, así que la historia se queda y la categoría deja de ofrecerse.
+     */
+    fun archiveCategory(category: CategoryEntity) {
+        viewModelScope.launch { categories.update(category.copy(isArchived = true)) }
+    }
+
+    private fun nextSortOrder(kind: CategoryKind): Int {
+        val max = state.value.categoriesById.values
+            .filter { it.kind == kind }
+            .maxOfOrNull { it.sortOrder }
+        return (max ?: 0) + 5
     }
 
     private fun buildState(

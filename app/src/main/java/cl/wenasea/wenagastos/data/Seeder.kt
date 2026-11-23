@@ -4,6 +4,7 @@ import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.CategoryEntity
 import cl.wenasea.wenagastos.data.local.entity.CategoryKind
+import cl.wenasea.wenagastos.data.local.entity.CategoryNature
 import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.repo.AccountRepository
 import cl.wenasea.wenagastos.data.repo.CategoryRepository
@@ -62,12 +63,19 @@ object Seeder {
     )
 
     fun defaultCategories(): List<CategoryEntity> {
-        fun expense(name: String, emoji: String, color: String, order: Int) = CategoryEntity(
+        fun expense(
+            name: String,
+            emoji: String,
+            color: String,
+            order: Int,
+            nature: CategoryNature = CategoryNature.VARIABLE,
+        ) = CategoryEntity(
             name = name,
             emoji = emoji,
             colorHex = color,
             kind = CategoryKind.EXPENSE,
             sortOrder = order,
+            nature = nature,
         )
 
         fun income(name: String, emoji: String, color: String, order: Int) = CategoryEntity(
@@ -83,16 +91,31 @@ object Seeder {
             expense("Transporte", "🚌", "#1565C0", 20),
             expense("Bencina", "⛽", "#455A64", 30),
             expense("Delivery", "🛵", "#EF6C00", 40),
+            expense("Hogar", "🛋️", "#795548", 45),
             expense("Restaurantes", "🍽️", "#C62828", 50),
             expense("Salud", "💊", "#00695C", 60),
-            expense("Servicios básicos", "🏠", "#5E35B1", 70),
-            expense("Suscripciones", "📺", "#AD1457", 80),
+            expense("Servicios básicos", "🏠", "#5E35B1", 70, CategoryNature.FIXED),
+            expense("Arriendo", "🔑", "#5E35B1", 75, CategoryNature.FIXED),
+            expense("Suscripciones", "📺", "#AD1457", 80, CategoryNature.FIXED),
             expense("Mascotas", "🐶", "#8D6E63", 90),
             expense("Deporte", "⚽", "#00838F", 100),
             expense("Compras", "🛍️", "#6A1B9A", 110),
+            expense("Ropa", "👕", "#8E24AA", 115),
             expense("Gustitos", "🎉", "#F9A825", 120),
-            expense("Educación", "📚", "#283593", 130),
+            expense("Home Studio", "🎧", "#3949AB", 125),
+            expense("Educación", "📚", "#283593", 130, CategoryNature.FIXED),
+            expense("Entretenimiento", "🎬", "#D81B60", 135),
             expense("Otros gastos", "❓", "#616161", 140),
+            expense("Cuidado personal", "🧴", "#009688", 145),
+            expense("Taxi", "🚕", "#FB8C00", 155),
+            expense("Regalos", "🎁", "#E91E63", 165),
+            expense("Apuestas", "🎲", "#6D4C41", 175),
+            expense("Servicios opcionales", "📶", "#1E88E5", 185),
+            expense("Empresa", "🏢", "#37474F", 190),
+            expense("Ahorro", "🐷", "#2E7D32", 195, CategoryNature.SAVINGS),
+            expense("Fondo de emergencia", "🛟", "#00796B", 197, CategoryNature.SAVINGS),
+            expense("APV", "🏦", "#283593", 198, CategoryNature.SAVINGS),
+            expense("Inversiones", "💹", "#00695C", 199, CategoryNature.SAVINGS),
             income("Sueldo", "💼", "#2E7D32", 200),
             income("Rendimientos", "📈", "#00897B", 210),
             income("Otros ingresos", "➕", "#43A047", 220),
