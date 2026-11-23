@@ -52,10 +52,20 @@ data class StatementTemplate(
     /** `true` cuando el archivo trae el monto repartido en dos columnas. */
     val hasTwoAmountColumns: Boolean get() = debitColumn != null || creditColumn != null
 
-    /** La fila es la cabecera que esta plantilla espera. */
+    /**
+     * La fila es la cabecera que esta plantilla espera.
+     *
+     * La fecha y la descripción las tiene cualquier cartola del banco, así que no alcanzan para
+     * reconocerla: Falabella tiene la cuenta corriente y la tarjeta bajo la misma institución, y la
+     * plantilla de una —`Cargo` y `Abono`, sin columna de monto— se comía la tabla de la otra y
+     * dejaba sus 101 filas sin leer. Lo que dice si la plantilla sirve para este archivo es la
+     * plata: sin una columna de monto, de cargo o de abono no hay nada que leer con ella.
+     */
     fun matches(row: List<String>): Boolean {
         val cells = row.map { TextNorm.plain(it) }
-        return TextNorm.plain(dateColumn) in cells && TextNorm.plain(merchantColumn) in cells
+        fun has(name: String?): Boolean = name != null && TextNorm.plain(name) in cells
+        if (!has(dateColumn) || !has(merchantColumn)) return false
+        return has(amountColumn) || has(debitColumn) || has(creditColumn)
     }
 
     fun toJson(): String = Json.write(

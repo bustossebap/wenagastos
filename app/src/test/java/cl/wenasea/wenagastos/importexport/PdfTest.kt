@@ -228,6 +228,26 @@ class PdfTest {
     }
 
     @Test
+    fun `la plantilla que el telefono recuerda del banco no se come la tarjeta`() {
+        // El teléfono no lee la cartola de cero: le pasa la plantilla que guardó del banco
+        // (`SettingsViewModel.importStatement`), y Falabella tiene la cuenta corriente y la tarjeta
+        // bajo la misma institución. La plantilla de la cuenta corriente —la que quedó guardada en
+        // el A34— trae `Cargo` y `Abono` y ningún `Monto`, así que sus 101 filas quedaban sin leer.
+        val cuentaCorriente = StatementTemplate(
+            dateColumn = "Fecha",
+            merchantColumn = "Descripcion",
+            debitColumn = "Cargo",
+            creditColumn = "Abono",
+            balanceColumn = "Saldo",
+        )
+
+        val sheet = Pdf.sheet(estadoDeCuenta())!!
+
+        assertEquals(4, StatementImport.read(sheet)!!.rows.size)
+        assertEquals(4, StatementImport.read(sheet, cuentaCorriente)!!.rows.size)
+    }
+
+    @Test
     fun `una tabla sin cabecera y con dos filas no se inventa`() {
         // Sin títulos, dos renglones no son una tabla: puede ser cualquier cosa de la hoja.
         assertNull(Pdf.sheet(estadoDeCuenta(rows = ESTADO_ROWS.take(2))))

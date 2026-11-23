@@ -129,6 +129,43 @@ class StatementImportTest {
     }
 
     @Test
+    fun `la plantilla de la cuenta corriente no se come la tabla de la tarjeta`() {
+        // Falabella guarda una sola plantilla por institución: la de la cuenta corriente `8777`
+        // —Cargo y Abono, sin columna de monto— quedó recordada al importar esa cartola. Su fecha y
+        // su descripción son las mismas que las del estado de cuenta de la tarjeta, así que
+        // «calzaba» con su cabecera y dejaba todas las filas sin leer.
+        val remembered = StatementTemplate(
+            dateColumn = "Fecha",
+            merchantColumn = "Descripcion",
+            debitColumn = "Cargo",
+            creditColumn = "Abono",
+            balanceColumn = "Saldo",
+        )
+
+        val sheet = read(
+            "Fecha;Descripción;Monto;Cuota;Valor cuota\n" +
+                "12/10/2026;Ikea;86.980;01/03;28.993\n" +
+                "13/10/2026;Lider;23.532;01/01;23.532\n" +
+                "04/11/2026;Pago tarjeta;208.960;;-208.960\n",
+            remembered,
+        )
+
+        assertEquals(3, sheet.rows.size)
+        assertEquals(0, sheet.skipped)
+        // La plantilla que vale es la que se deduce del archivo, no la que estaba guardada.
+        assertNull(sheet.template.debitColumn)
+        assertEquals("Monto", sheet.template.amountColumn)
+        // La compra en cuotas se anota por lo que se cobra este mes, con el precio aparte.
+        assertEquals(28_993L, sheet.rows[0].amount)
+        assertEquals(86_980L, sheet.rows[0].originAmount)
+        assertEquals(1, sheet.rows[0].installmentNumber)
+        assertEquals(3, sheet.rows[0].installmentTotal)
+        // El pago viene con el signo en la columna de la cuota: es plata que entra.
+        assertEquals(Direction.CREDIT, sheet.rows[2].direction)
+        assertEquals(208_960L, sheet.rows[2].amount)
+    }
+
+    @Test
     fun `una fila con cargo y abono a la vez no se anota`() {
         val sheet = read(
             "Fecha;Descripción;Cargo;Abono\n" +

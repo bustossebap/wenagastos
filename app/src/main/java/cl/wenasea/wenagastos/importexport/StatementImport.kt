@@ -395,6 +395,9 @@ object StatementImport {
      * `true` cuando la plantilla apunta a columnas que de verdad traen montos. Una cabecera partida
      * en varios renglones —"CARGO DEL MES" sobre la cuota y el valor de la cuota— deja la plantilla
      * apuntando a la columna de las cuotas, donde no hay ni un número.
+     *
+     * Sin ninguna columna de plata mapeada no hay nada que validar: la plantilla no sirve para este
+     * archivo y la lectura tiene que decidir mirando los datos, no quedarse con una hoja vacía.
      */
     private fun hasNumbers(lines: List<List<String>>, columns: Columns): Boolean {
         // Las columnas que la fila va a mirar: cargo y abono si están, y si no el monto.
@@ -403,7 +406,7 @@ object StatementImport {
         } else {
             listOf(columns.amount)
         }).filter { it >= 0 }
-        if (money.isEmpty()) return true
+        if (money.isEmpty()) return false
         val withNumber = lines.count { line -> money.any { isMoney(line.getOrNull(it).orEmpty()) } }
         return withNumber * 2 >= lines.size
     }
