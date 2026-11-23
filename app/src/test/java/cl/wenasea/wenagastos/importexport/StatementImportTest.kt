@@ -140,6 +140,40 @@ class StatementImportTest {
     }
 
     @Test
+    fun `cuando la cabecera titula dos columnas manda el contenido`() {
+        // Como el estado de cuenta de la tarjeta: "CARGO DEL MES" está escrito sobre la columna de
+        // la cuota, no sobre la del monto.
+        val sheet = read(
+            "LUGAR DE OPERACIÓN;FECHA DE OPERACIÓN;DESCRIPCIÓN OPERACIÓN O COBRO;" +
+                "MONTO;VALOR CUOTA MENSUAL;CARGO DEL MES NºCUOTA\r\n" +
+                "TGR;09/06/26;MERCADO PAGO 4 TCOM;26.990;4.498;05/06\r\n" +
+                "SANTIAGO;24/09/26;ALTAMAR SPA;;7.500;1/1\r\n",
+        )
+
+        assertEquals(2, sheet.rows.size)
+        assertEquals(4_498L, sheet.rows[0].amount)
+        assertEquals(date(2026, 6, 9), sheet.rows[0].date)
+        assertEquals("MERCADO PAGO 4 TCOM", sheet.rows[0].merchant)
+        assertEquals(Direction.DEBIT, sheet.rows[0].direction)
+        assertEquals(7_500L, sheet.rows[1].amount)
+        assertEquals(0, sheet.skipped)
+    }
+
+    @Test
+    fun `una cuota no es un monto`() {
+        // "05/06" son puros dígitos, pero no son plata: sin esto, el pago se leería como un cargo
+        // de 506 pesos y el abono de la misma fila quedaría sin anotar.
+        val sheet = read(
+            "Fecha;Descripción;Cargo;Abono\n" +
+                "18/11/2026;PAGO TARJETA;05/06;10.000\n",
+        )
+
+        assertEquals(1, sheet.rows.size)
+        assertEquals(Direction.CREDIT, sheet.rows[0].direction)
+        assertEquals(10_000L, sheet.rows[0].amount)
+    }
+
+    @Test
     fun `sin cabecera reconocible no se inventa nada`() {
         assertNull(StatementImport.read(Csv.split("foo;bar\n1;2\n")))
         assertNull(StatementImport.read(Csv.split("")))

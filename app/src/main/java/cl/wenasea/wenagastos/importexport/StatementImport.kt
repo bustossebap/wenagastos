@@ -56,16 +56,128 @@ object StatementImport {
      * adivinar, y anotar montos en el día equivocado es peor que no importar nada.
      */
     fun read(csv: Csv.Sheet, remembered: StatementTemplate? = null): Sheet? {
-        val header = findHeader(csv.rows, remembered) ?: return null
-        val (template, index) = header
-        val columns = Columns.of(template, csv.rows[index]) ?: return null
+        val header = findHeader(csv.rows, remembered)
+        if (header != null) {
+            val (template, index) = header
+            val columns = Columns.of(template, csv.rows[index])
+            if (columns != null) {
+                val sheet = sheetOf(csv, template, columns, index)
+                if (sheet.rows.isNotEmpty()) return sheet
+                // La cabecera puede mentir: "CARGO DEL MES" titula dos columnas y la de abajo trae
+                // la cuota, no el monto. Si las columnas que promete ni siquiera traen números, se
+                // deduce mirando los datos.
+                if (hasNumbers(csv.rows.drop(index + 1), columns)) return sheet
+                return byValues(csv) ?: sheet
+            }
+        }
+        return byValues(csv)
+    }
 
+    /** Los movimientos de la cartola leída con esta plantilla. */
+    private fun sheetOf(
+        csv: Csv.Sheet,
+        template: StatementTemplate,
+        columns: Columns,
+        headerIndex: Int,
+    ): Sheet {
+        val (rows, skipped) = rowsOf(csv.rows.drop(headerIndex + 1), columns)
+        return sheet(rows, skipped, template)
+    }
+
+    /**
+     * Deduce las columnas mirando los datos y no la cabecera. Sirve cuando el banco titula un grupo
+     * de columnas con un solo texto —"CARGO DEL MES" arriba de la cuota y del valor de la cuota— o
+     * cuando el título no está sobre los datos sino centrado entre dos columnas.
+     *
+     * La fecha es la columna que trae fechas, los montos son los que traen montos, y cargo y abono
+     * se reconocen porque nunca vienen llenos en la misma fila. El comercio es la columna de texto
+     * más larga: la descripción, no la sucursal.
+     */
+    private fun byValues(csv: Csv.Sheet): Sheet? {
+        val rows = csv.rows
+        fun cell(line: List<String>, index: Int): String = line.getOrNull(index).orEmpty()
+        fun isMovement(line: List<String>): Boolean =
+            line.any { StatementDates.parse(it) != null } && line.any { isMoney(it) }
+
+        val first = rows.indexOfFirst { isMovement(it) }
+        if (first < 0) return null
+        val movements = rows.drop(first).filter { isMovement(it) }
+        val width = movements.maxOf { it.size }
+
+        val date = (0 until width)
+            .maxByOrNull { index -> movements.count { StatementDates.parse(cell(it, index)) != null } }
+            ?: return null
+        if (movements.none { StatementDates.parse(cell(it, date)) != null }) return null
+
+        // Una columna es de plata si en al menos un tercio de las filas hay un monto: el cargo y el
+        // abono vienen llenos en la mitad cada uno.
+        val fewest = maxOf(1, (movements.size + 2) / 3)
+        val money = (0 until width).filter { index ->
+            index != date && movements.count { isMoney(cell(it, index)) } >= fewest
+        }
+
+        // Cargo y abono: dos columnas que nunca vienen llenas en la misma fila.
+        val pair = money.indices
+            .flatMap { left -> (left + 1 until money.size).map { right -> money[left] to money[right] } }
+            .firstOrNull { (debit, credit) ->
+                movements.none { isMoney(cell(it, debit)) && isMoney(cell(it, credit)) }
+            }
+        val debit = pair?.first ?: -1
+        val credit = pair?.second ?: -1
+        // Con una sola columna de monto —la tarjeta— se toma la que trae monto en más filas: la
+        // cartola de tarjeta puede traer el total de la compra sólo en las que van en cuotas, y el
+        // cargo del mes en todas. Si empatan, la primera: el total antes que la cuota.
+        val amount = if (debit < 0) {
+            money.maxByOrNull { index -> movements.count { isMoney(cell(it, index)) } } ?: return null
+        } else {
+            -1
+        }
+
+        // Los nombres salen de la cabecera que está sobre la tabla, para que la plantilla que se
+        // recuerde después también calce con este archivo.
+        val names = rows.take(first).lastOrNull { line -> cell(line, date).isNotBlank() } ?: emptyList()
+        fun name(index: Int): String {
+            val text = names.getOrNull(index)?.trim().orEmpty()
+            val unique = text.isNotEmpty() && names.count { it.trim().equals(text, ignoreCase = true) } == 1
+            return if (unique) text else "Columna ${index + 1}"
+        }
+
+        val balance = money.firstOrNull { name(it).lowercase().startsWith("saldo") } ?: -1
+        // El comercio tiene que venir en casi todas las filas: una columna que se repite vacía no
+        // es la descripción, y un movimiento sin comercio no se puede anotar.
+        val filled = maxOf(1, movements.size / 2)
+        val merchant = (0 until width)
+            .filter { it != date && it !in money }
+            .filter { index -> movements.count { cell(it, index).isNotBlank() } >= filled }
+            .maxByOrNull { index -> movements.sumOf { cell(it, index).trim().length } }
+            ?: return null
+
+        val template = StatementTemplate(
+            dateColumn = name(date),
+            merchantColumn = name(merchant),
+            debitColumn = if (debit >= 0) name(debit) else null,
+            creditColumn = if (credit >= 0) name(credit) else null,
+            amountColumn = if (amount >= 0) name(amount) else null,
+            balanceColumn = if (balance >= 0) name(balance) else null,
+        )
+        val columns = Columns(date, merchant, debit, credit, amount, balance)
+        val (parsed, skipped) = rowsOf(rows.drop(first), columns)
+        return sheet(parsed, skipped, template)
+    }
+
+    /** Un renglón a movimiento; los que no lo son se cuentan como salteados. */
+    private fun rowsOf(lines: List<List<String>>, columns: Columns): Pair<List<Row>, Int> {
         val rows = ArrayList<Row>()
         var skipped = 0
-        for (line in csv.rows.drop(index + 1)) {
+        for (line in lines) {
             val row = parseRow(line, columns)
             if (row == null) skipped++ else rows.add(row)
         }
+        return rows to skipped
+    }
+
+    /** La hoja con lo que se pudo leer, con el corte en la fila más nueva que trae saldo. */
+    private fun sheet(rows: List<Row>, skipped: Int, template: StatementTemplate): Sheet {
         // La cartola puede venir en cualquier orden: el corte es el de la fecha más nueva.
         val newest = rows.filter { it.balance != null }.maxByOrNull { it.date }
         return Sheet(
@@ -152,6 +264,33 @@ object StatementImport {
     /** El comercio sin los espacios de relleno que mete la planilla. */
     private fun describe(text: String): String =
         text.replace('\u00A0', ' ').replace(Regex("\\s+"), " ").trim().take(MAX_MERCHANT)
+
+    /**
+     * `true` si la celda es un monto y nada más: sirve para reconocer las columnas de plata sin
+     * cabecera. Es más estricto que [StatementNumbers.parse], que saca los dígitos de donde estén
+     * —"MERCADO PAGO 4 TCOM" tiene un 4, pero no es plata—.
+     */
+    private fun isMoney(text: String): Boolean {
+        val clean = text.replace('\u00A0', ' ').trim()
+        return clean.isNotEmpty() && MONEY.matches(clean)
+    }
+
+    /**
+     * `true` cuando la plantilla apunta a columnas que de verdad traen montos. Una cabecera partida
+     * en varios renglones —"CARGO DEL MES" sobre la cuota y el valor de la cuota— deja la plantilla
+     * apuntando a la columna de las cuotas, donde no hay ni un número.
+     */
+    private fun hasNumbers(lines: List<List<String>>, columns: Columns): Boolean {
+        // Las columnas que la fila va a mirar: cargo y abono si están, y si no el monto.
+        val money = (if (columns.debit >= 0 || columns.credit >= 0) {
+            listOf(columns.debit, columns.credit)
+        } else {
+            listOf(columns.amount)
+        }).filter { it >= 0 }
+        if (money.isEmpty()) return true
+        val withNumber = lines.count { line -> money.any { isMoney(line.getOrNull(it).orEmpty()) } }
+        return withNumber * 2 >= lines.size
+    }
 
     /**
      * `true` cuando otra celda de la misma fila trae exactamente el negativo del monto. Es como una
@@ -249,6 +388,8 @@ object StatementImport {
         fun parse(text: String): Amount? {
             val raw = text.replace('\u00A0', ' ').trim()
             if (raw.isEmpty()) return null
+            // Una cuota ("05/06") o una fecha también son puros dígitos, y no son plata.
+            if (raw.contains('/')) return null
             val negative = raw.startsWith("-") || (raw.startsWith("(") && raw.endsWith(")"))
             val positive = raw.startsWith("+")
 
@@ -266,4 +407,7 @@ object StatementImport {
     /** El renglón completo se guarda para poder revisarlo; no hace falta más que esto. */
     private const val MAX_RAW_TEXT = 300
     private const val MAX_MERCHANT = 120
+
+    /** Un monto tal como lo escribe el banco: `$ 30.600`, `-775.655`, `(500)`. Sin letras ni barras. */
+    private val MONEY = Regex("""^\(?[\s$]*[+-]?[\s$]*\d[\d.,]*\)?$""")
 }

@@ -22,6 +22,110 @@ import org.junit.Test
 class PdfTest {
 
     @Test
+    fun `una cartola sin rejilla se lee por donde terminan los montos`() {
+        val sheet = Pdf.sheet(sinRejilla())!!
+
+        assertEquals(
+            listOf("Fecha", "Oficina Nro Doc", "Descripción", "Cargo", "", "Abono", "", "Saldo"),
+            sheet.rows.first(),
+        )
+
+        // Los montos vienen alineados a la derecha: el de siete cifras empieza más a la izquierda
+        // que el de cuatro y aun así caen en la misma columna.
+        val rows = StatementImport.read(sheet)!!
+        assertEquals(4, rows.rows.size)
+        assertEquals("Cargo", rows.template.debitColumn)
+        assertEquals("Abono", rows.template.creditColumn)
+        assertEquals("Saldo", rows.template.balanceColumn)
+
+        assertEquals(Direction.DEBIT, rows.rows[0].direction)
+        assertEquals(30_600L, rows.rows[0].amount)
+        assertEquals("Transf. para Kaizen", rows.rows[0].merchant)
+        assertEquals(Direction.CREDIT, rows.rows[1].direction)
+        assertEquals(30_600L, rows.rows[1].amount)
+        assertEquals(Direction.DEBIT, rows.rows[2].direction)
+        assertEquals(208_960L, rows.rows[2].amount)
+        assertEquals(2_600L, rows.rows[2].balance)
+        assertEquals(Direction.CREDIT, rows.rows[3].direction)
+        assertEquals(211_560L, rows.rows[3].balance)
+        // El corte es el saldo del movimiento más nuevo: la cartola viene con lo nuevo arriba, y
+        // ese movimiento dejó la cuenta en cero.
+        assertEquals(0L, rows.balance)
+    }
+
+    @Test
+    fun `las lineas de otro cuadro no son las columnas de la tabla`() {
+        // Como el estado de cuenta de la tarjeta: la página trae la rejilla del cuadro de cupos,
+        // que no tiene nada que ver con el detalle, y el detalle está dibujado sin rejilla.
+        val page = Page()
+        page.text(40.0, 719.0, "ESTADO DE CUENTA")
+        for (x in listOf(37.0, 161.5, 250.5, 448.5)) page.rule(x, 700.0, 740.0)
+        page.text(39.0, 730.0, "CUPO TOTAL")
+        page.text(163.0, 730.0, "UTILIZADO")
+        page.text(252.0, 730.0, "DISPONIBLE")
+        page.text(390.0, 730.0, "CAE")
+
+        page.text(118.76, 500.0, "FECHA DE OPERACIÓN")
+        page.text(149.0, 500.0, "DESCRIPCIÓN")
+        page.text(right(447.0, "MONTO"), 500.0, "MONTO")
+        page.text(118.76, 487.0, "21/10/2026")
+        page.text(149.0, 487.0, "Transf. de Ana Perez")
+        page.text(right(447.0, "$ 30.600"), 487.0, "$ 30.600")
+        page.text(118.76, 474.0, "22/10/2026")
+        page.text(149.0, 474.0, "Transf. de Bruno Diaz")
+        page.text(right(447.0, "$ 1.400"), 474.0, "$ 1.400")
+
+        val sheet = Pdf.sheet(page.build())!!
+        val rows = StatementImport.read(sheet)!!
+
+        assertEquals(2, rows.rows.size)
+        assertEquals(30_600L, rows.rows[0].amount)
+        assertEquals(Direction.DEBIT, rows.rows[0].direction)
+        assertEquals("Transf. de Bruno Diaz", rows.rows[1].merchant)
+        assertEquals(1_400L, rows.rows[1].amount)
+    }
+
+    @Test
+    fun `un texto escrito con la fuente del banco se traduce con su tabla`() {
+        // La CMR escribe cada letra como un número elegido por el programa que armó el PDF: el
+        // flujo no dice nada por sí solo. La tabla `ToUnicode` de la fuente dice que el 0x35 es una
+        // `S`; sin ella, la cartola no se puede leer.
+        val rows = listOf(
+            listOf("21/10/2026", "Transf. para Kaizen", "$ 30.600", ""),
+            listOf("22/10/2026", "Transf. de Ana Perez", "", "$ 1.400"),
+        )
+        val headers = listOf("Fecha", "Descripción", "Cargo", "Abono")
+        val table = (headers + rows.flatten()).joinToString("").toSet()
+            .mapIndexed { index, character -> character to 0x21 + index }
+            .toMap()
+        fun codes(value: String): String = value.map { table.getValue(it).toChar() }.joinToString("")
+
+        val page = Page()
+        page.text(40.0, 633.64, codes(headers[0]))
+        page.text(99.0, 633.64, codes(headers[1]))
+        page.text(right(529.0, codes(headers[2])), 633.64, codes(headers[2]))
+        page.text(right(602.0, codes(headers[3])), 633.64, codes(headers[3]))
+
+        rows.forEachIndexed { index, row ->
+            val y = 620.64 - index * 15.0
+            page.text(40.0, y, codes(row[0]))
+            page.text(99.0, y, codes(row[1]))
+            if (row[2].isNotEmpty()) page.text(right(529.0, codes(row[2])), y, codes(row[2]))
+            if (row[3].isNotEmpty()) page.text(right(602.0, codes(row[3])), y, codes(row[3]))
+        }
+
+        val sheet = Pdf.sheet(page.build(cMap = toUnicode(table)))!!
+        assertEquals(headers[0], sheet.rows.first()[0])
+        assertEquals(headers[1], sheet.rows.first()[1])
+
+        val movements = StatementImport.read(sheet)!!
+        assertEquals(2, movements.rows.size)
+        assertEquals("Transf. para Kaizen", movements.rows[0].merchant)
+        assertEquals(30_600L, movements.rows[0].amount)
+        assertEquals(1_400L, movements.rows[1].amount)
+    }
+
+    @Test
     fun `un pdf de cartola se lee igual que un csv`() {
         val sheet = Pdf.sheet(cartola()).let { assertNotNull(it); it!! }
 
@@ -141,6 +245,58 @@ class PdfTest {
         return page.build()
     }
 
+    /**
+     * Una cartola como las de Falabella: sin una sola línea de rejilla, con los montos alineados a
+     * la derecha y la cabecera escrita celda contra celda. Las columnas hay que sacarlas del texto.
+     */
+    private fun sinRejilla(): ByteArray {
+        val page = Page()
+        page.text(40.0, 719.0, "Cuenta Corriente / Cartola Histórica")
+        page.text(40.0, 633.64, "Fecha")
+        page.text(99.0, 633.64, "Oficina")
+        page.text(201.0, 633.64, "Nro Doc")
+        page.text(246.0, 633.64, "Descripción")
+        page.text(right(CARGO, "Cargo"), 633.64, "Cargo")
+        page.text(right(ABONO, "Abono"), 633.64, "Abono")
+        page.text(right(SALDO, "Saldo"), 633.64, "Saldo")
+
+        val rows = listOf(
+            listOf("21/10/2026", "Transf. para Kaizen", "$ 30.600", "", "$ 0"),
+            listOf("21/10/2026", "Transf. de Ana Perez", "", "$ 30.600", "$ 30.600"),
+            listOf("13/10/2026", "Transf para Pago Tarjeta CMR", "$ 208.960", "", "$ 2.600"),
+            listOf("13/10/2026", "Transf. de Diego Soto", "", "$ 208.960", "$ 211.560"),
+        )
+        rows.forEachIndexed { index, row ->
+            val y = 620.64 - index * 15.0
+            page.text(40.0, y, row[0])
+            page.text(99.0, y, "Sucursal Virtual 0")
+            page.text(246.0, y, row[1])
+            if (row[2].isNotEmpty()) page.text(right(CARGO, row[2]), y, row[2])
+            if (row[3].isNotEmpty()) page.text(right(ABONO, row[3]), y, row[3])
+            page.text(right(SALDO, row[4]), y, row[4])
+        }
+        return page.build()
+    }
+
+    /** Dónde empieza un monto que el banco alinea a la derecha en [edge]. */
+    private fun right(edge: Double, value: String): Double {
+        val units = value.sumOf { if (it == '.' || it == ' ') NARROW.toDouble() else WIDE.toDouble() }
+        return edge - units * FONT_SIZE / 1000.0
+    }
+
+    /** La tabla `ToUnicode` que traduce los códigos de la fuente propia a letras. */
+    private fun toUnicode(table: Map<Char, Int>): String = buildString {
+        append("/CIDInit /ProcSet findresource begin\n12 dict begin\nbegincmap\n")
+        append("1 begincodespacerange\n<0000><FFFF>\nendcodespacerange\n")
+        append(table.size).append(" beginbfrange\n")
+        for ((character, code) in table) {
+            val from = code.toString(16).padStart(4, '0')
+            val to = character.code.toString(16).padStart(4, '0')
+            append("<$from><$from><$to>\n")
+        }
+        append("endbfrange\nendcmap\nCMapName currentdict /CMap defineresource pop\nend end\n")
+    }
+
     /** Un PDF con texto y sin rejilla: no es una tabla y no se puede inventar. */
     private fun sinTabla(): ByteArray = Page().apply {
         text(32.0, 700.0, "Hola")
@@ -209,7 +365,7 @@ class PdfTest {
             value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
         /** El archivo PDF, con su xref y su trailer, para que además sea un PDF de verdad. */
-        fun build(): ByteArray {
+        fun build(cMap: String? = null): ByteArray {
             val streams = pages.map { deflate(it.toString().toByteArray(Charsets.ISO_8859_1)) }
             val out = ByteArrayOutputStream()
             val offsets = ArrayList<Int>()
@@ -223,12 +379,30 @@ class PdfTest {
                 write("$number 0 obj\n$body\nendobj\n")
             }
 
+            fun streamAt(number: Int, body: String, stream: ByteArray) {
+                offsets.add(out.size())
+                write("$number 0 obj\n<< /Length ${stream.size} $body >>\nstream\n")
+                out.write(stream)
+                write("\nendstream\nendobj\n")
+            }
+
             // 1 catálogo, 2 páginas, 3 fuente y después un objeto de página y su contenido por hoja.
             val kids = streams.indices.joinToString(" ") { "${PAGE + it * 2} 0 R" }
+            val custom = cmapObject(streams.size)
             write("%PDF-1.4\n")
             objectAt(1, "<< /Type /Catalog /Pages 2 0 R >>")
             objectAt(2, "<< /Type /Pages /Kids [$kids] /Count ${streams.size} >>")
-            objectAt(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>")
+            if (cMap == null) {
+                objectAt(3, "<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>")
+            } else {
+                // Una fuente como la de la CMR: el texto son códigos y la tabla dice qué letra es
+                // cada uno. Al lector solo le importa `/ToUnicode`; los demás datos sobran.
+                objectAt(
+                    3,
+                    "<< /Type /Font /Subtype /Type0 /BaseFont /Custom /Encoding /Identity-H " +
+                        "/ToUnicode $custom 0 R >>",
+                )
+            }
             streams.forEachIndexed { index, stream ->
                 val page = PAGE + index * 2
                 val contents = page + 1
@@ -237,19 +411,22 @@ class PdfTest {
                     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 905] " +
                         "/Resources << /Font << /F1 3 0 R >> >> /Contents $contents 0 R >>",
                 )
-                offsets.add(out.size())
-                write("$contents 0 obj\n<< /Length ${stream.size} /Filter /FlateDecode >>\nstream\n")
-                out.write(stream)
-                write("\nendstream\nendobj\n")
+                streamAt(contents, "/Filter /FlateDecode", stream)
+            }
+            if (cMap != null) {
+                streamAt(custom, "/Filter /FlateDecode", deflate(cMap.toByteArray(Charsets.ISO_8859_1)))
             }
 
-            val count = 4 + streams.size * 2
+            val count = if (cMap == null) 4 + streams.size * 2 else custom + 1
             val xref = out.size()
             write("xref\n0 $count\n0000000000 65535 f \n")
             for (offset in offsets) write("%010d 00000 n \n".format(offset))
             write("trailer\n<< /Size $count /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n")
             return out.toByteArray()
         }
+
+        /** El número del objeto de la tabla, después de las páginas. */
+        private fun cmapObject(pages: Int): Int = PAGE + pages * 2
 
         private fun deflate(bytes: ByteArray): ByteArray {
             val deflater = Deflater()
@@ -275,6 +452,16 @@ class PdfTest {
 
         /** Los bordes verticales que dibuja la cartola: fecha, sucursal, descripción y montos. */
         val COLUMN_EDGES = listOf(30.5, 58.5, 109.5, 324.5, 362.5, 443.5, 525.5, 605.5)
+
+        /** Dónde termina cada columna de plata en la cartola sin rejilla, como en el banco. */
+        const val CARGO = 529.0
+        const val ABONO = 602.0
+        const val SALDO = 693.0
+
+        /** El tamaño de letra de los montos y los anchos de Helvetica que usa el banco. */
+        const val FONT_SIZE = 8.0
+        const val NARROW = 278
+        const val WIDE = 556
 
         /** Así viene el nombre en el archivo del banco: codificado tres veces. */
         const val MOJIBAKE = "sebasti\u00C3\u00C2\u00C2\u00A1n"
