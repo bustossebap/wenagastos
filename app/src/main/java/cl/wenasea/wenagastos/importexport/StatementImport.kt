@@ -40,6 +40,13 @@ object StatementImport {
         val originAmount: Long? = null,
         /** El renglón completo, para poder revisarlo después desde el editor. */
         val rawText: String,
+        /**
+         * `true` cuando el banco marcó la fila como **pago de la tarjeta**: escribe el monto en
+         * positivo y el signo en otra columna de la misma fila. En una tarjeta eso no es un
+         * ingreso: es plata que entra para bajar la deuda (Fase 9.6), y quien la anota como ingreso
+         * infla el mes con plata que ya se había gastado.
+         */
+        val isPayment: Boolean = false,
     )
 
     /** Lo que se pudo leer de un archivo. */
@@ -324,6 +331,10 @@ object StatementImport {
         }
         val direction: Direction
         val amount: Long
+        // El pago de la tarjeta: el banco escribe la plata en positivo y el signo en la columna de
+        // al lado. Sólo puede pasar en la cartola de una tarjeta, donde una columna de monto no
+        // tiene dos lados.
+        var payment = false
         if (columns.debit >= 0 || columns.credit >= 0) {
             val out = StatementNumbers.parse(columns.text(line, columns.debit))?.value ?: 0L
             val into = StatementNumbers.parse(columns.text(line, columns.credit))?.value ?: 0L
@@ -343,6 +354,7 @@ object StatementImport {
             }
         } else {
             if (charge == null || charge.value == 0L) return null
+            val bySign = charge.value > 0 && paid(line, columns, charge.value)
             direction = when {
                 charge.value < 0 -> Direction.DEBIT
                 // Con el signo escrito, el "+" es plata que entra.
@@ -350,10 +362,11 @@ object StatementImport {
                 // Falabella escribe el pago de la tarjeta en positivo y pone el signo en otra columna
                 // de la misma fila (`MONTO 208.960` con `VALOR CUOTA -208.960`). Sin mirar ahí, pagar
                 // la tarjeta se anotaría como un gasto más.
-                paid(line, columns, charge.value) -> Direction.CREDIT
+                bySign -> Direction.CREDIT
                 // Sin signo es una compra: así vienen las cartolas de tarjeta.
                 else -> Direction.DEBIT
             }
+            payment = bySign
             amount = abs(charge.value)
         }
         val balance = StatementNumbers.parse(columns.text(line, columns.balance))?.value
@@ -374,6 +387,7 @@ object StatementImport {
             // Un precio menor que la cuota de un mes es una columna mal leída, no una compra.
             originAmount = origin?.let(::abs)?.takeIf { cuota != null && it >= amount },
             rawText = line.joinToString(" · ") { it.trim() }.take(MAX_RAW_TEXT),
+            isPayment = payment,
         )
     }
 

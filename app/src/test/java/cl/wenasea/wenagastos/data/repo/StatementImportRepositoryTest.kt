@@ -1,18 +1,25 @@
 package cl.wenasea.wenagastos.data.repo
 
+import cl.wenasea.wenagastos.capture.fakes.FakeAccountDao
 import cl.wenasea.wenagastos.capture.fakes.FakeAccountSnapshotDao
 import cl.wenasea.wenagastos.capture.fakes.FakeCategoryDao
 import cl.wenasea.wenagastos.capture.fakes.FakeMerchantRuleDao
 import cl.wenasea.wenagastos.capture.fakes.FakeTransactionDao
+import cl.wenasea.wenagastos.data.local.entity.AccountEntity
+import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
+import cl.wenasea.wenagastos.data.local.entity.Institution
 import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Installments
+import cl.wenasea.wenagastos.domain.Reports
 import cl.wenasea.wenagastos.importexport.Csv
 import cl.wenasea.wenagastos.importexport.StatementImport
+import cl.wenasea.wenagastos.importexport.StatementSummary
 import java.time.LocalDate
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -29,6 +36,7 @@ class StatementImportRepositoryTest {
 
     private val movements = FakeTransactionDao()
     private val snapshots = FakeAccountSnapshotDao()
+    private val accounts = AccountRepository(FakeAccountDao())
     private val categories = CategoryRepository(FakeCategoryDao())
     private val rules = MerchantRuleRepository(FakeMerchantRuleDao(), categories)
 
@@ -40,6 +48,7 @@ class StatementImportRepositoryTest {
         snapshots = SnapshotRepository(snapshots),
         rules = rules,
         categories = categories,
+        accounts = accounts,
     )
 
     private val accountId = 1L
@@ -289,5 +298,170 @@ class StatementImportRepositoryTest {
     @Test
     fun `sin cartolas importadas no hay nada que deshacer`() = runBlocking {
         assertNull(repository.undoLast())
+    }
+
+    /** Una cuenta de Falabella, como la tarjeta y la cuenta corriente que comparten institución. */
+    private suspend fun account(kind: AccountKind): Long = accounts.add(
+        AccountEntity(
+            name = if (kind == AccountKind.CREDIT) "Falabella CMR" else "Falabella Cta. Cte.",
+            institution = Institution.FALABELLA,
+            kind = kind,
+            colorHex = Institution.FALABELLA.colorHex,
+        ),
+    )
+
+    /** Lo que el estado de cuenta de una tarjeta imprime arriba, fuera de la tabla. */
+    private val resumen = StatementSummary(
+        debt = 700_000L,
+        billed = 650_000L,
+        limit = 1_500_000L,
+        asOf = LocalDate.of(2026, 11, 4),
+        due = LocalDate.of(2026, 11, 20),
+    )
+
+    /** El estado de cuenta de la tarjeta: una compra en cuotas y el pago, como los escribe la CMR. */
+    private val estadoDeCuenta =
+        "Fecha;Descripción;Monto;Cuota;Valor cuota\n" +
+            "12/10/2026;Ikea;86.980;01/03;28.993\n" +
+            "10/10/2026;Pago tarjeta cmr;208.960;;-208.960\n"
+
+    @Test
+    fun `la deuda y el cupo del resumen quedan en la tarjeta`() = runBlocking {
+        val id = account(AccountKind.CREDIT)
+
+        val report = repository.import(
+            id,
+            sheet(estadoDeCuenta),
+            origin = "estado-cuenta.pdf",
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+
+        // Una tarjeta no informa saldo: el corte es lo que el banco dice que se debe, al día de
+        // facturación —el cupo utilizado, que ya incluye las cuotas por facturar—.
+        assertTrue(report.snapshotSaved)
+        assertTrue(report.balanceFromSummary)
+        assertEquals(-700_000L, report.balance)
+        val corte = snapshots.stored.single()
+        assertEquals(-700_000L, corte.balance)
+        assertEquals(Dates.endOfDay(LocalDate.of(2026, 11, 4)), corte.asOf)
+        assertEquals(SnapshotSource.CARTOLA, corte.source)
+        assertTrue(corte.note!!.startsWith("Cupo utilizado al"))
+
+        // El cupo y las fechas que la cuenta no tenía se guardan: los dijo el banco.
+        val saved = accounts.get(id)!!
+        assertEquals(1_500_000L, saved.creditLimit)
+        assertEquals(4, saved.statementDay)
+        assertEquals(20, saved.paymentDay)
+        assertEquals(1_500_000L, report.learnedLimit)
+        assertEquals(4, report.learnedStatementDay)
+        assertEquals(20, report.learnedPaymentDay)
+    }
+
+    @Test
+    fun `un cupo que el usuario ya habia escrito no se pisa con el del resumen`() = runBlocking {
+        val id = accounts.add(
+            AccountEntity(
+                name = "Falabella CMR",
+                institution = Institution.FALABELLA,
+                kind = AccountKind.CREDIT,
+                colorHex = Institution.FALABELLA.colorHex,
+                creditLimit = 900_000L,
+                statementDay = 15,
+            ),
+        )
+
+        val report = repository.import(
+            id,
+            sheet(estadoDeCuenta),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+
+        val saved = accounts.get(id)!!
+        assertEquals(900_000L, saved.creditLimit)
+        assertEquals(15, saved.statementDay)
+        // El día de pago no lo tenía configurado: ese sí se aprende.
+        assertEquals(20, saved.paymentDay)
+        assertNull(report.learnedLimit)
+        assertNull(report.learnedStatementDay)
+        assertEquals(20, report.learnedPaymentDay)
+    }
+
+    @Test
+    fun `el pago de la tarjeta entra como traspaso y no como ingreso`() = runBlocking {
+        val id = account(AccountKind.CREDIT)
+
+        val report = repository.import(
+            id,
+            sheet(estadoDeCuenta),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+        assertEquals(1, report.payments)
+
+        val pago = stored().single { it.direction == Direction.CREDIT }
+        assertEquals(208_960L, pago.amount)
+        assertTrue(pago.isTransfer)
+        assertNull(pago.transferAccountId)
+        assertNull(pago.categoryId)
+        assertTrue(!pago.isExpense)
+
+        // El mes no se infla: la plata no se ganó, se movió de cuenta.
+        assertEquals(0L, Reports.income(stored()))
+        assertTrue(report.describe().contains("traspaso, no como ingreso"))
+
+        // La compra en cuotas sigue siendo un gasto, con su cuota y su precio.
+        val compra = stored().single { it.direction == Direction.DEBIT }
+        assertEquals(28_993L, compra.amount)
+        assertEquals(1, compra.installmentNumber)
+        assertEquals(3, compra.installmentTotal)
+        assertEquals(86_980L, compra.originAmount)
+        assertTrue(!compra.isTransfer)
+    }
+
+    @Test
+    fun `las cuotas de la cartola llegan a Cuotas por pagar`() = runBlocking {
+        val id = account(AccountKind.CREDIT)
+
+        repository.import(
+            id,
+            sheet(
+                "Fecha;Descripción;Monto;Cuota;Valor cuota\n" +
+                    "12/10/2026;Ikea;86.980;01/03;28.993\n" +
+                    "02/10/2026;Protector;54.990;01/06;9.165\n",
+            ),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+
+        val plans = Installments.plans(stored())
+        assertEquals(2, plans.size)
+        // Falta lo que todavía no se facturó: dos cuotas de la de Ikea y cinco del protector.
+        assertEquals(57_986L + 45_825L, plans.sumOf { it.pending })
+        assertEquals(2, plans.first { it.merchant == "Ikea" }.remaining)
+    }
+
+    @Test
+    fun `el resumen de una tarjeta no se aplica a una cuenta corriente`() = runBlocking {
+        val id = account(AccountKind.CHECKING)
+
+        val report = repository.import(
+            id,
+            sheet("Fecha;Descripción;Monto;Saldo\n18/11/2026;LIDER;12.345;100.000\n"),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+
+        // El saldo de una cuenta corriente es el de su columna: el cupo de una tarjeta no dice nada
+        // de la plata que hay, y sus fechas tampoco.
+        assertEquals(false, report.balanceFromSummary)
+        assertEquals(100_000L, report.balance)
+        assertEquals(100_000L, snapshots.stored.single().balance)
+        val saved = accounts.get(id)!!
+        assertNull(saved.creditLimit)
+        assertNull(saved.statementDay)
+        assertNull(report.learnedLimit)
+        assertEquals(0, report.payments)
     }
 }

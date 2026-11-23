@@ -1,5 +1,6 @@
 package cl.wenasea.wenagastos.importexport
 
+import cl.wenasea.wenagastos.domain.TextNorm
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -45,13 +46,22 @@ object Pdf {
      * lanza: un PDF que no se entiende es un archivo que el usuario eligió mal, no una falla del
      * programa.
      */
-    fun sheet(bytes: ByteArray): Csv.Sheet? {
+    fun sheet(bytes: ByteArray): Csv.Sheet? = statement(bytes)?.sheet
+
+    /**
+     * El archivo leído: la tabla de movimientos y, si el banco las imprime, las cifras de su
+     * resumen (cupo, facturado, deuda). `null` cuando no hay tabla: un resumen suelto no es una
+     * cartola que se pueda importar.
+     */
+    fun statement(bytes: ByteArray): StatementFile? {
         // Cada página es su propia tabla: su rejilla, su cabecera y sus filas. Si se juntaran
         // todas las líneas del archivo, dos páginas con la misma altura se pisarían.
         val cMaps = cMaps(bytes)
-        val pages = streams(bytes)
+        val read = streams(bytes)
             .filter { it.contains("Tj") || it.contains("TJ") }
-            .mapNotNull { page(it, cMaps) }
+            .map { stream -> stream to runs(stream, cMaps) }
+        val pages = read
+            .mapNotNull { (stream, pageRuns) -> page(stream, pageRuns) }
             .filter { it.rows.isNotEmpty() }
         if (pages.isEmpty()) return null
 
@@ -68,7 +78,94 @@ object Pdf {
 
         val out = pages.flatMap { it.rows }.map { row -> row.map { year(it, period) } }
         if (out.isEmpty()) return null
-        return Csv.Sheet(delimiter = ';', rows = listOf(header) + out)
+        return StatementFile(
+            sheet = Csv.Sheet(delimiter = ';', rows = listOf(header) + out),
+            summary = summary(read.map { it.second }),
+        )
+    }
+
+    /**
+     * Las cifras que el banco imprime lejos de la tabla: cuánto llegó la factura, cuánto se debe
+     * hoy y de cuánto es el cupo (ver [StatementSummary]).
+     *
+     * Cada página se lee por separado —una página es un cuadro, y dos páginas distintas pueden
+     * tener textos a la misma altura— y gana la primera que traiga cada cifra: el resumen de
+     * arriba de la primera hoja es el del período que se facturó.
+     *
+     * `null` cuando el archivo no trae ninguna: la cartola de una cuenta corriente no las imprime y
+     * su saldo sigue viniendo de su columna.
+     */
+    private fun summary(pages: List<List<Run>>): StatementSummary? {
+        var found: StatementSummary? = null
+        for (page in pages) {
+            val part = summaryOf(page) ?: continue
+            found = StatementSummary(
+                debt = found?.debt ?: part.debt,
+                billed = found?.billed ?: part.billed,
+                limit = found?.limit ?: part.limit,
+                asOf = found?.asOf ?: part.asOf,
+                due = found?.due ?: part.due,
+            )
+        }
+        return found?.takeUnless { it.isEmpty }
+    }
+
+    /**
+     * Las cifras de una página. El estado de cuenta de la CMR las pone en un cuadro de etiqueta y
+     * valor, de dos maneras: el cupón de pago deja el valor **a la derecha** de su etiqueta, en la
+     * misma línea (`Monto Total Facturado a Pagar   $873.130`), y el cuadro de cupos lo deja
+     * **debajo**, centrado en la columna de la etiqueta (`Cupo Total` arriba de `1.110.000`). Se
+     * buscan las dos.
+     */
+    private fun summaryOf(page: List<Run>): StatementSummary? {
+        if (page.isEmpty()) return null
+        // De arriba abajo y de izquierda a derecha: el primer rótulo que aparece es el del resumen.
+        val lines = page.sortedWith(compareByDescending<Run> { it.y }.thenBy { it.x })
+
+        fun label(text: String): Run? = lines.firstOrNull { TextNorm.plain(it.text).contains(text) }
+
+        fun money(run: Run): Long? {
+            val clean = run.text.trim()
+            if (!MONEY.matches(clean)) return null
+            val value = clean.filter { it.isDigit() }.toLongOrNull() ?: return null
+            return if (clean.startsWith("-")) -value else value
+        }
+
+        fun centre(run: Run): Double = run.x + width(run.text, run.size) / 2
+
+        /** El valor de la etiqueta, en positivo: a su derecha en la línea, o debajo en su columna. */
+        fun value(of: Run?): Long? {
+            if (of == null) return null
+            lines
+                .filter { abs(it.y - of.y) <= LINE_TOLERANCE * 2 && it.x > of.x }
+                .firstNotNullOfOrNull { money(it) }
+                ?.let { return abs(it) }
+            // Debajo, el valor cae en la columna de la etiqueta. Se exige que su centro quede
+            // cerca: el número de la columna de al lado es el de otro cupo.
+            return lines
+                .filter { money(it) != null && of.y - it.y in 2.0..SUMMARY_ROW_GAP }
+                .filter { abs(centre(it) - centre(of)) <= SUMMARY_COLUMN }
+                .minByOrNull { abs(centre(it) - centre(of)) }
+                ?.let { money(it) }
+                ?.let { abs(it) }
+        }
+
+        /** La fecha que va a la derecha de la etiqueta, como el `04/11/2026` de la facturación. */
+        fun date(of: Run?): LocalDate? {
+            if (of == null) return null
+            return lines
+                .filter { abs(it.y - of.y) <= LINE_TOLERANCE * 2 && it.x > of.x }
+                .firstNotNullOfOrNull { dateOf(it.text.trim()) }
+        }
+
+        val found = StatementSummary(
+            debt = value(label("cupo utilizado")),
+            billed = value(label("monto total facturado a pagar")) ?: value(label("total a pagar")),
+            limit = value(label("cupo total")),
+            asOf = date(label("fecha facturacion")),
+            due = date(label("pagar hasta")),
+        )
+        return found.takeUnless { it.isEmpty }
     }
 
     /** Una página leída: su cabecera, sus movimientos y el período que declara. */
@@ -85,8 +182,7 @@ object Pdf {
      * posiciones del texto y, cuando ninguna de las dos deja una tabla con títulos, la tabla de la
      * tarjeta que el banco no tituló.
      */
-    private fun page(stream: String, cMaps: Map<String, Map<Int, String>>): Page? {
-        val runs = runs(stream, cMaps)
+    private fun page(stream: String, runs: List<Run>): Page? {
         if (runs.isEmpty()) return null
         val lines = runs.groupByLine()
 
@@ -880,6 +976,18 @@ object Pdf {
 
     /** Dos montos que terminan a menos de esto terminan en la misma columna. */
     private const val END_TOLERANCE = 2.0
+
+    /**
+     * Cuánto puede separar la etiqueta del resumen del valor que va debajo: una línea de texto. Más
+     * abajo ya es otro cuadro de la misma página.
+     */
+    private const val SUMMARY_ROW_GAP = 20.0
+
+    /**
+     * Cuánto puede correrse el centro del valor respecto del centro de su etiqueta. El cuadro de
+     * cupos centra los números bajo cada título; la columna de al lado queda más lejos que esto.
+     */
+    private const val SUMMARY_COLUMN = 40.0
 
     /**
      * Un monto como los escribe el banco: `$ 30.600`, `-775.655`, `0`. Sin espacios ni barras: una

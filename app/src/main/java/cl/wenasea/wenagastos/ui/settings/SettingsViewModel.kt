@@ -299,11 +299,13 @@ class SettingsViewModel(
     /**
      * Importa la cartola de una cuenta: la lee con la plantilla que se recuerda de ese banco (o la
      * deduce del archivo la primera vez), anota lo que falta y deja el saldo del cierre como corte.
-     * Lo que ya había llegado por aviso no se duplica: se cruza por día, monto y sentido.
+     * Lo que ya había llegado por aviso no se duplica: se cruza por día, monto y sentido. Si el PDF
+     * trae el resumen de una tarjeta —lo que se debe, la factura, el cupo—, va con la importación.
      */
     fun importStatement(account: AccountEntity, uri: Uri) = runTask {
+        val file = files.statement(uri)
         val sheet = StatementImport.read(
-            files.statementSheet(uri),
+            file.sheet,
             formats.templateFor(account.institution),
         )
             ?: throw StatementException(
@@ -312,7 +314,7 @@ class SettingsViewModel(
             )
         // Acertó la lectura: la próxima cartola de este banco se lee con la misma plantilla.
         formats.remember(account.institution, sheet.template)
-        val report = statements.import(account.id, sheet, files.name(uri))
+        val report = statements.import(account.id, sheet, files.name(uri), summary = file.summary)
         report.describe()
     }
 

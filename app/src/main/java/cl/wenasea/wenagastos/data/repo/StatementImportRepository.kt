@@ -2,6 +2,7 @@ package cl.wenasea.wenagastos.data.repo
 
 import cl.wenasea.wenagastos.capture.CategoryPick
 import cl.wenasea.wenagastos.capture.MerchantQuality
+import cl.wenasea.wenagastos.data.local.entity.AccountKind
 import cl.wenasea.wenagastos.data.local.entity.AccountSnapshotEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.data.local.entity.SnapshotSource
@@ -9,7 +10,9 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionEntity
 import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.importexport.StatementImport
+import cl.wenasea.wenagastos.importexport.StatementSummary
 import java.time.LocalDate
 
 /**
@@ -29,6 +32,17 @@ data class StatementReport(
     val snapshotSaved: Boolean,
     /** Filas que no eran movimientos: títulos, totales, líneas en blanco. */
     val skipped: Int,
+    /**
+     * Filas que eran el pago de la tarjeta. Se anotan como traspaso de una sola pata: bajan la
+     * deuda y no suman como ingreso (Fase 9.6).
+     */
+    val payments: Int = 0,
+    /** El saldo del corte no vino de una columna del archivo sino del resumen de la tarjeta. */
+    val balanceFromSummary: Boolean = false,
+    /** Cifras del resumen que el archivo traía y la cuenta no tenía: quedaron guardadas. */
+    val learnedLimit: Long? = null,
+    val learnedStatementDay: Int? = null,
+    val learnedPaymentDay: Int? = null,
 ) {
 
     /** El resumen que se muestra al terminar, en el mismo tono que el resto de la app. */
@@ -51,19 +65,51 @@ data class StatementReport(
             append(" ")
             append(if (pending == 1) "1 quedó por revisar." else "$pending quedaron por revisar.")
         }
+        if (payments > 0) {
+            append(" ")
+            append(
+                if (payments == 1) {
+                    "El pago de la tarjeta quedó como traspaso, no como ingreso."
+                } else {
+                    "Los $payments pagos de la tarjeta quedaron como traspaso, no como ingreso."
+                },
+            )
+        }
         if (skipped > 0) {
             append(" Salteé ")
             append(if (skipped == 1) "1 fila" else "$skipped filas")
             append(" que no eran movimientos.")
         }
         append(" ")
-        append(
-            when {
-                balance == null -> "La cartola no traía saldo."
-                snapshotSaved -> "El saldo que informa quedó como corte de la cuenta."
-                else -> "El saldo que informa no es más nuevo que el corte que ya tenía la cuenta."
-            },
-        )
+        if (balanceFromSummary && balance != null) {
+            // Una tarjeta no informa saldo: la deuda la dice el resumen del banco, y es la que
+            // deja el corte.
+            append("El banco dice que la tarjeta debe ${Money.format(-balance)}. ")
+            append(
+                if (snapshotSaved) {
+                    "Quedó como corte de la cuenta."
+                } else {
+                    "Ese corte no es más nuevo que el que ya tenía."
+                },
+            )
+        } else {
+            append(
+                when {
+                    balance == null -> "La cartola no traía saldo."
+                    snapshotSaved -> "El saldo que informa quedó como corte de la cuenta."
+                    else -> "El saldo que informa no es más nuevo que el corte que ya tenía la cuenta."
+                },
+            )
+        }
+        if (learnedLimit != null) {
+            append(" El cupo de la tarjeta quedó en ${Money.format(learnedLimit)}.")
+        }
+        if (learnedStatementDay != null) {
+            append(" Anoté que la facturación corta el día $learnedStatementDay.")
+        }
+        if (learnedPaymentDay != null) {
+            append(" La factura vence el día $learnedPaymentDay.")
+        }
     }
 }
 
@@ -103,6 +149,11 @@ data class UndoReport(
  *    cada fila busca su propio parecido y no reusa el que ya calzó con otra fila.
  * 3. El saldo del cierre entra como corte de la cuenta (`SnapshotSource.CARTOLA`), pero solo si es
  *    más nuevo que el que la cuenta ya tenía: un corte viejo no puede pisar uno nuevo.
+ *
+ * La Fase 9.6 le agregó lo propio de una **tarjeta**: el estado de cuenta no informa saldo, pero sí
+ * cuánto se debe y de cuánto es el cupo. La deuda del resumen entra como corte de la tarjeta, las
+ * cifras que la cuenta no tenía se guardan en ella, y el pago de la tarjeta se anota como traspaso
+ * en vez de ingreso.
  */
 class StatementImportRepository(
     private val runner: TransactionRunner,
@@ -110,6 +161,7 @@ class StatementImportRepository(
     private val snapshots: SnapshotRepository,
     private val rules: MerchantRuleRepository,
     private val categories: CategoryRepository,
+    private val accounts: AccountRepository,
 ) {
 
     /**
@@ -117,23 +169,37 @@ class StatementImportRepository(
      * diga de dónde vino. Opcional.
      * @param now el instante de la importación, para recortar el corte de un archivo del día en
      * curso: el cierre de hoy todavía no llegó.
+     * @param summary lo que el estado de cuenta imprime fuera de la tabla (cupo, facturado, deuda).
+     * Sólo lo trae el PDF de una tarjeta, y sólo se usa si la cuenta es de crédito.
      */
     suspend fun import(
         accountId: Long,
         sheet: StatementImport.Sheet,
         origin: String? = null,
         now: Long = System.currentTimeMillis(),
+        summary: StatementSummary? = null,
     ): StatementReport = runner.run {
+        // El resumen de la tarjeta sólo sirve en una tarjeta: en una cuenta corriente el saldo es
+        // el de su columna, y un cupo no dice nada de la plata que hay.
+        val account = accounts.get(accountId)
+        val card = summary?.takeIf { account?.kind == AccountKind.CREDIT && !it.isEmpty }
         var added = 0
         var repeated = 0
         var pending = 0
         var completed = 0
+        var payments = 0
         val claimed = mutableSetOf<Long>()
         val pools = mutableMapOf<PoolKey, List<TransactionEntity>>()
 
         // En orden: la fila más vieja se queda con el movimiento más viejo. Si el archivo viniera
         // al revés, la de hoy podría reclamar el aviso de ayer y dejar a la de ayer sin pareja.
         for (row in sheet.rows.sortedBy { it.date }) {
+            // El pago de la tarjeta no es un ingreso: es plata que llega para bajar la deuda. Se
+            // anota como traspaso de una sola pata —la mecánica que la app ya tiene para «esto vino
+            // de otra cuenta»—, así mueve el saldo y no suma en gastos ni en ingresos. Sin esto,
+            // pagar la tarjeta aparecía como ingreso del mes y el gasto original seguía contado: el
+            // mes decía que se había ganado plata que sólo cambió de lugar.
+            val payment = card != null && row.isPayment
             val at = Dates.startOfDay(row.date)
             val key = PoolKey(at, row.amount, row.direction)
             val pool = pools.getOrPut(key) {
@@ -143,7 +209,7 @@ class StatementImportRepository(
             if (existing != null) {
                 claimed += existing.id
                 repeated++
-                val filled = complete(existing, row)
+                val filled = complete(existing, row, payment)
                 if (filled != null) {
                     transactions.save(filled)
                     completed++
@@ -159,16 +225,23 @@ class StatementImportRepository(
                     direction = row.direction,
                     merchantRaw = row.merchant,
                     merchantNorm = row.merchant.lowercase(),
-                    categoryId = CategoryPick.resolve(
-                        rules = rules,
-                        categories = categories,
-                        merchant = row.merchant,
-                        direction = row.direction,
-                        rawText = row.rawText,
-                        merchantKnown = known,
-                    ),
+                    categoryId = if (payment) {
+                        null
+                    } else {
+                        CategoryPick.resolve(
+                            rules = rules,
+                            categories = categories,
+                            merchant = row.merchant,
+                            direction = row.direction,
+                            rawText = row.rawText,
+                            merchantKnown = known,
+                        )
+                    },
                     status = if (known) TransactionStatus.CONFIRMED else TransactionStatus.PENDING,
-                    isExpense = row.direction == Direction.DEBIT,
+                    isExpense = row.direction == Direction.DEBIT && !payment,
+                    // Traspaso con una sola pata: la cuenta de la que salió el pago no está en este
+                    // archivo, y `transferAccountId` queda en `null` hasta que alguien la diga.
+                    isTransfer = payment,
                     source = TransactionSource.CSV,
                     // Fase 9.3: la cuota y el precio de la compra, para saber cuánto falta pagar.
                     installmentNumber = row.installmentNumber,
@@ -179,12 +252,20 @@ class StatementImportRepository(
                 ),
             )
             added++
+            if (payment) payments++
             if (!known) pending++
         }
 
         var snapshotSaved = false
-        val balance = sheet.balance
+        // Una tarjeta no informa saldo: lo que debe lo dice su resumen —el cupo utilizado, que ya
+        // incluye las cuotas que todavía no se facturan— y, si el banco no lo imprime, la factura
+        // del mes. El corte va a la fecha de facturación, que es a la que corresponden esas cifras.
+        val cardDebt = card?.let { it.debt ?: it.billed }
+        val balance = sheet.balance ?: cardDebt?.let { -it }
+        val balanceFromSummary = sheet.balance == null && cardDebt != null
         val balanceDate = sheet.balanceDate
+            ?: card?.asOf
+            ?: if (cardDebt != null) sheet.rows.maxOfOrNull { it.date } else null
         if (balance != null && balanceDate != null) {
             // El saldo es del cierre del día, no del comienzo: un corte a las 00:00 dejaría afuera
             // los movimientos de esa misma jornada. Pero el cierre de hoy todavía no llegó: la
@@ -208,7 +289,9 @@ class StatementImportRepository(
                         balance = balance,
                         source = SnapshotSource.CARTOLA,
                         note = buildString {
-                            append("Cierre del ")
+                            // Una tarjeta no tiene «cierre de saldo»: lo que queda anotado es lo
+                            // que el banco dice que se debe a esa fecha.
+                            append(if (balanceFromSummary) "Cupo utilizado al " else "Cierre del ")
                             append(Dates.fullDateLabel(asOf))
                             if (!origin.isNullOrBlank()) {
                                 append(" · ")
@@ -221,6 +304,28 @@ class StatementImportRepository(
             }
         }
 
+        // El resumen trae también el cupo y las fechas de facturación y de pago. Se guardan sólo si
+        // la cuenta no los tenía: lo que el usuario escribió en el diálogo manda.
+        var learnedLimit: Long? = null
+        var learnedStatementDay: Int? = null
+        var learnedPaymentDay: Int? = null
+        if (card != null && account != null) {
+            val limit = card.limit?.takeIf { it > 0 }
+            val statementDay = card.asOf?.dayOfMonth
+            val paymentDay = card.due?.dayOfMonth
+            val updated = account.copy(
+                creditLimit = account.creditLimit ?: limit,
+                statementDay = account.statementDay ?: statementDay,
+                paymentDay = account.paymentDay ?: paymentDay,
+            )
+            if (updated != account) {
+                accounts.update(updated)
+                if (account.creditLimit == null) learnedLimit = limit
+                if (account.statementDay == null) learnedStatementDay = statementDay
+                if (account.paymentDay == null) learnedPaymentDay = paymentDay
+            }
+        }
+
         StatementReport(
             added = added,
             repeated = repeated,
@@ -230,6 +335,11 @@ class StatementImportRepository(
             balanceDate = balanceDate,
             snapshotSaved = snapshotSaved,
             skipped = sheet.skipped,
+            payments = payments,
+            balanceFromSummary = balanceFromSummary,
+            learnedLimit = learnedLimit,
+            learnedStatementDay = learnedStatementDay,
+            learnedPaymentDay = learnedPaymentDay,
         )
     }
 
@@ -241,6 +351,7 @@ class StatementImportRepository(
     private suspend fun complete(
         existing: TransactionEntity,
         row: StatementImport.Row,
+        payment: Boolean,
     ): TransactionEntity? {
         if (existing.isTransfer) return null
         if (!MerchantQuality.isGeneric(existing.merchantRaw)) return null
@@ -252,13 +363,21 @@ class StatementImportRepository(
             installmentNumber = row.installmentNumber ?: existing.installmentNumber,
             installmentTotal = row.installmentTotal ?: existing.installmentTotal,
             originAmount = row.originAmount ?: existing.originAmount,
-            categoryId = existing.categoryId ?: CategoryPick.resolve(
-                rules = rules,
-                categories = categories,
-                merchant = row.merchant,
-                direction = row.direction,
-                rawText = row.rawText,
-            ),
+            // El pago de la tarjeta se completa igual, pero queda como traspaso: la cartola acaba
+            // de decir que esa plata entró a la tarjeta.
+            categoryId = if (payment) {
+                null
+            } else {
+                existing.categoryId ?: CategoryPick.resolve(
+                    rules = rules,
+                    categories = categories,
+                    merchant = row.merchant,
+                    direction = row.direction,
+                    rawText = row.rawText,
+                )
+            },
+            isTransfer = payment,
+            isExpense = existing.isExpense && !payment,
             status = TransactionStatus.CONFIRMED,
             notes = null,
             rawText = existing.rawText ?: row.rawText,

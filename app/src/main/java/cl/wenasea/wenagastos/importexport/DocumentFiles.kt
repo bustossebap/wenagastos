@@ -45,25 +45,27 @@ class DocumentFiles(private val resolver: ContentResolver) {
     }
 
     /**
-     * La cartola como hoja de filas. El banco la entrega en CSV, en Excel o —Santander y
-     * Falabella— en PDF, y el tipo que el selector declara no siempre acierta, así que manda el
-     * contenido: si el archivo empieza con `%PDF-` la tabla se saca del PDF; si es un ZIP, del libro
-     * de Excel; si no, es un texto que se separa por comas.
+     * La cartola como hoja de filas y, cuando el banco las imprime, las cifras de su resumen. El
+     * banco la entrega en CSV, en Excel o —Santander y Falabella— en PDF, y el tipo que el selector
+     * declara no siempre acierta, así que manda el contenido: si el archivo empieza con `%PDF-` la
+     * tabla se saca del PDF; si es un ZIP, del libro de Excel; si no, es un texto que se separa por
+     * comas.
      */
-    fun statementSheet(uri: Uri, maxBytes: Int = MAX_BYTES): Csv.Sheet {
+    fun statement(uri: Uri, maxBytes: Int = MAX_BYTES): StatementFile {
         val bytes = read(uri, maxBytes)
         if (Pdf.looksLikePdf(bytes)) {
             // El PDF no es un archivo dañado: es una cartola con un dibujo que no se pudo leer.
-            return Pdf.sheet(bytes) ?: throw StatementException(
+            return Pdf.statement(bytes) ?: throw StatementException(
                 "El PDF no trae una tabla de movimientos que sepa leer. " +
                     "Prueba con la cartola en CSV desde el sitio del banco.",
             )
         }
         if (Xlsx.looksLikeZip(bytes)) {
-            return Xlsx.sheet(bytes) ?: throw StatementException(
+            val sheet = Xlsx.sheet(bytes) ?: throw StatementException(
                 "El Excel no trae una hoja con los movimientos que sepa leer. " +
                     "Prueba con la planilla de movimientos o con la cartola en CSV.",
             )
+            return StatementFile(sheet)
         }
         if (Xlsx.looksLikeLegacy(bytes)) {
             // El .xls es un contenedor binario de los años noventa, no un ZIP: no se abre acá.
@@ -72,7 +74,7 @@ class DocumentFiles(private val resolver: ContentResolver) {
                     "Ábrelo en Excel y guárdalo como .xlsx o como CSV.",
             )
         }
-        return Csv.split(decode(bytes))
+        return StatementFile(Csv.split(decode(bytes)))
     }
 
     /**

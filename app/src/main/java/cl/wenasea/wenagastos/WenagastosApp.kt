@@ -131,6 +131,7 @@ class AppContainer(application: Application) {
             snapshots = snapshots,
             rules = rules,
             categories = categories,
+            accounts = accounts,
         )
     }
 

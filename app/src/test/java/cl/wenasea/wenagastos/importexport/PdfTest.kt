@@ -215,16 +215,46 @@ class PdfTest {
         // `01/01` es una compra pagada de una vez, no una compra en cuotas.
         assertEquals(23_532L, rows[1].amount)
         assertNull(rows[1].installmentTotal)
+        assertTrue(!rows[1].isPayment)
 
         // El pago de la tarjeta viene con el signo en el monto: es plata que entra a la tarjeta.
         assertEquals(Direction.CREDIT, rows[2].direction)
         assertEquals(208_960L, rows[2].amount)
         assertNull(rows[2].originAmount)
+        // Y la fila queda marcada como el pago de la tarjeta: en una tarjeta eso no es un ingreso.
+        assertTrue(rows[2].isPayment)
 
         // Una fila que sólo trae el valor de la cuota —el impuesto de timbres— también es un
         // movimiento: la columna del monto viene vacía.
         assertEquals(Direction.DEBIT, rows[3].direction)
         assertEquals(172L, rows[3].amount)
+        assertTrue(!rows[3].isPayment)
+    }
+
+    @Test
+    fun `el resumen de la tarjeta se lee de su cupon y de su cuadro de cupos`() {
+        // Geometría copiada del estado de cuenta de la CMR: el cupón de pago escribe el valor a la
+        // derecha de su etiqueta y el cuadro de cupos lo escribe debajo, centrado en su columna.
+        // Las cifras son inventadas: lo que se prueba es dónde mirar.
+        val file = Pdf.statement(estadoDeCuenta(withSummary = true))!!
+
+        val summary = file.summary!!
+        assertEquals(700_000L, summary.debt)
+        assertEquals(650_000L, summary.billed)
+        assertEquals(1_500_000L, summary.limit)
+        assertEquals("2026-11-04", summary.asOf.toString())
+        assertEquals("2026-11-20", summary.due.toString())
+
+        // El resumen no se cuela como movimiento: la tabla sigue teniendo sus cuatro renglones.
+        assertEquals(4, StatementImport.read(file.sheet)!!.rows.size)
+    }
+
+    @Test
+    fun `una cartola de cuenta corriente no trae resumen`() {
+        // El saldo de una cuenta viene en su columna; no hay cupo que leer y no se inventa.
+        val file = Pdf.statement(cartola())!!
+        assertNull(file.summary)
+        assertEquals(6, StatementImport.read(file.sheet)!!.rows.size)
     }
 
     @Test
@@ -348,9 +378,31 @@ class PdfTest {
      * la marca de titular (`T`), el monto, la cuota (`01/01`) y lo que se cobra este mes, en ese
      * orden de izquierda a derecha.
      */
-    private fun estadoDeCuenta(rows: List<List<String>> = ESTADO_ROWS): ByteArray {
+    private fun estadoDeCuenta(
+        rows: List<List<String>> = ESTADO_ROWS,
+        withSummary: Boolean = false,
+    ): ByteArray {
         val page = Page()
         page.text(36.67, 780.0, "ESTADO DE CUENTA")
+        if (withSummary) {
+            // El cupón de pago: la etiqueta a la izquierda y el valor en la misma línea, a la derecha.
+            page.text(38.67, 684.4, "Fecha Facturación Estado de Cuenta:")
+            page.text(182.61, 684.4, "04/11/2026")
+            page.text(109.26, 628.74, "• Pagar Hasta")
+            page.text(273.96, 628.74, "20/11/2026")
+            page.text(109.26, 614.74, "• Monto Total Facturado a Pagar")
+            page.text(273.96, 614.74, "$650.000")
+            page.text(109.26, 600.74, "• Monto mínimo a pagar")
+            page.text(273.96, 600.74, "$98.520")
+            // El cuadro de cupos: los títulos en un renglón y los números debajo, en su columna.
+            page.text(161.73, 485.04, "Cupo Total")
+            page.text(223.85, 485.04, "Cupo Utilizado")
+            page.text(289.73, 485.04, "Cupo Disponible")
+            page.text(38.67, 471.54, "Cupo Compras*")
+            page.text(167.96, 472.04, "1.500.000")
+            page.text(239.81, 472.04, "700.000")
+            page.text(341.76, 472.04, "800.000")
+        }
         page.text(36.67, 570.0, "COMPRAS NACIONALES")
         rows.forEachIndexed { index, row ->
             val y = 548.0 - index * 13.0
