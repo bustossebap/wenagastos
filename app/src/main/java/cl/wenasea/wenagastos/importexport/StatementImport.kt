@@ -129,6 +129,10 @@ object StatementImport {
                 monto.value < 0 -> Direction.DEBIT
                 // Con el signo escrito, el "+" es plata que entra.
                 monto.signed -> Direction.CREDIT
+                // Falabella escribe el pago de la tarjeta en positivo y pone el signo en otra columna
+                // de la misma fila (`MONTO 208.960` con `VALOR CUOTA -208.960`). Sin mirar ahí, pagar
+                // la tarjeta se anotaría como un gasto más.
+                paid(line, columns, monto.value) -> Direction.CREDIT
                 // Sin signo es una compra: así vienen las cartolas de tarjeta.
                 else -> Direction.DEBIT
             }
@@ -148,6 +152,17 @@ object StatementImport {
     /** El comercio sin los espacios de relleno que mete la planilla. */
     private fun describe(text: String): String =
         text.replace('\u00A0', ' ').replace(Regex("\\s+"), " ").trim().take(MAX_MERCHANT)
+
+    /**
+     * `true` cuando otra celda de la misma fila trae exactamente el negativo del monto. Es como una
+     * cartola de tarjeta marca un pago cuando prefiere no escribir el monto en negativo: el monto va
+     * en la columna de la compra y el signo, en la de la cuota.
+     */
+    private fun paid(line: List<String>, columns: Columns, amount: Long): Boolean =
+        line.indices.any { index ->
+            index != columns.amount && index != columns.balance &&
+                StatementNumbers.parse(line[index])?.value == -amount
+        }
 
     /** Dónde queda cada columna en las filas de esta cartola; `-1` cuando no existe. */
     private class Columns(

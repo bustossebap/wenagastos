@@ -308,7 +308,7 @@ class SettingsViewModel(
         )
             ?: throw StatementException(
                 "No reconocí la cartola: no encontré la fila de títulos con la fecha y el monto. " +
-                    "Prueba con la cartola en CSV o en PDF desde el sitio del banco.",
+                    "Prueba con la cartola en CSV, en PDF o en Excel desde el sitio del banco.",
             )
         // Acertó la lectura: la próxima cartola de este banco se lee con la misma plantilla.
         formats.remember(account.institution, sheet.template)

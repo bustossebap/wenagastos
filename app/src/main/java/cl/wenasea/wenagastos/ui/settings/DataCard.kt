@@ -141,9 +141,10 @@ internal fun DataCard(
                 modifier = Modifier.padding(top = 8.dp),
             )
             Text(
-                text = "La cartola del mes en CSV trae los gastos que el aviso del banco no alcanzó " +
-                    "a contar. Se cruza por día, monto y sentido: lo que ya está anotado no se " +
-                    "duplica, y el saldo del cierre queda como corte de la cuenta.",
+                text = "La cartola del mes trae los gastos que el aviso del banco no alcanzó a " +
+                    "contar; sirve la de CSV, la de PDF y la planilla de Excel del banco. Se cruza " +
+                    "por día, monto y sentido: lo que ya está anotado no se duplica, y el saldo del " +
+                    "cierre queda como corte de la cuenta.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),

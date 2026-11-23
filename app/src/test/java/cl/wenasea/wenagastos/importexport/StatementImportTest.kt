@@ -155,4 +155,19 @@ class StatementImportTest {
         assertEquals(date(2026, 11, 18), sheet.rows[0].date)
         assertTrue(sheet.rows[0].rawText.contains("LIDER EXPRESS"))
     }
+
+    @Test
+    fun `un pago con el signo en otra columna es plata que entra`() {
+        val sheet = read(
+            "Fecha;Descripción;Monto;Cuotas;Valor cuota\n" +
+                "18/11/2026;COMPRA LIDER;9.990;0;9.990\n" +
+                "19/11/2026;PAGO TARJETA;208.960;0;-208.960\n",
+        )
+
+        assertEquals(Direction.DEBIT, sheet.rows[0].direction)
+        assertEquals(9_990L, sheet.rows[0].amount)
+        // El banco escribe el pago en positivo y el signo en la columna de la cuota.
+        assertEquals(Direction.CREDIT, sheet.rows[1].direction)
+        assertEquals(208_960L, sheet.rows[1].amount)
+    }
 }

@@ -45,9 +45,10 @@ class DocumentFiles(private val resolver: ContentResolver) {
     }
 
     /**
-     * La cartola como hoja de filas. El banco la entrega en CSV o —Santander— en PDF, y el tipo
-     * que el selector declara no siempre acierta, así que manda el contenido: si el archivo empieza
-     * con `%PDF-` la tabla se saca del PDF; si no, es un texto que se separa por comas.
+     * La cartola como hoja de filas. El banco la entrega en CSV, en Excel o —Santander y
+     * Falabella— en PDF, y el tipo que el selector declara no siempre acierta, así que manda el
+     * contenido: si el archivo empieza con `%PDF-` la tabla se saca del PDF; si es un ZIP, del libro
+     * de Excel; si no, es un texto que se separa por comas.
      */
     fun statementSheet(uri: Uri, maxBytes: Int = MAX_BYTES): Csv.Sheet {
         val bytes = read(uri, maxBytes)
@@ -56,6 +57,19 @@ class DocumentFiles(private val resolver: ContentResolver) {
             return Pdf.sheet(bytes) ?: throw StatementException(
                 "El PDF no trae una tabla de movimientos que sepa leer. " +
                     "Prueba con la cartola en CSV desde el sitio del banco.",
+            )
+        }
+        if (Xlsx.looksLikeZip(bytes)) {
+            return Xlsx.sheet(bytes) ?: throw StatementException(
+                "El Excel no trae una hoja con los movimientos que sepa leer. " +
+                    "Prueba con la planilla de movimientos o con la cartola en CSV.",
+            )
+        }
+        if (Xlsx.looksLikeLegacy(bytes)) {
+            // El .xls es un contenedor binario de los años noventa, no un ZIP: no se abre acá.
+            throw StatementException(
+                "El archivo es un Excel antiguo (.xls) y no lo puedo abrir. " +
+                    "Ábrelo en Excel y guárdalo como .xlsx o como CSV.",
             )
         }
         return Csv.split(decode(bytes))
@@ -88,6 +102,7 @@ class DocumentFiles(private val resolver: ContentResolver) {
             "text/*",
             "text/comma-separated-values",
             "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "application/pdf",
         )
 
