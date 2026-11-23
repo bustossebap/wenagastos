@@ -81,8 +81,9 @@ object Pdf {
     /**
      * La tabla de una página, o `null` si esa página no trae una.
      *
-     * Se prueban las dos formas de sacar las columnas, en orden: la rejilla que dibujó el banco y,
-     * si esa no da una tabla con movimientos, las posiciones del texto.
+     * Se prueban las formas de sacar las columnas, en orden: la rejilla que dibujó el banco, las
+     * posiciones del texto y, cuando ninguna de las dos deja una tabla con títulos, la tabla de la
+     * tarjeta que el banco no tituló.
      */
     private fun page(stream: String, cMaps: Map<String, Map<Int, String>>): Page? {
         val runs = runs(stream, cMaps)
@@ -90,10 +91,98 @@ object Pdf {
         val lines = runs.groupByLine()
 
         val ruled = rules(stream)
-        if (ruled.size >= 3) {
-            table(lines, Grid(ruled, emptyList()))?.let { return it }
+        val found = (if (ruled.size >= 3) table(lines, Grid(ruled, emptyList())) else null)
+            ?: table(lines, textGrid(runs, lines.size))
+        // La tarjeta sin títulos: la tabla sacada del texto toma la cuota (`01/01`) por una fecha y
+        // queda con la cabecera vacía, que es lo mismo que no tener tabla.
+        if (found == null || found.header.all { it.isEmpty() }) return headerless(lines) ?: found
+        return found
+    }
+
+    /**
+     * La tabla de una tarjeta que el banco no tituló. El estado de cuenta de la CMR dibuja el
+     * detalle sin cabecera —arriba de las filas va un título de sección y nada más—, con la fecha en
+     * su propia columna y cinco más a la derecha: la marca de titular (`T`), el monto, el monto otra
+     * vez, la cuota (`01/03`) y el mes de facturación (`nov-2026`). La tabla que sale del texto toma
+     * la cuota por una fecha —`01/01` se lee como día y mes— y queda sin títulos, que es lo mismo
+     * que no tener tabla.
+     *
+     * Acá las columnas salen de lo que trae cada renglón: la fecha —sola, o pegada al comercio como
+     * la dibuja otra versión del mismo estado de cuenta—, el comercio que va entre la fecha y la
+     * primera columna de plata, y la cuota como frontera: a su izquierda el precio de la compra, a su
+     * derecha la plata que el banco cobra este mes, que es la que se anota. El banco escribe el monto
+     * dos veces cuando la compra no va en cuotas: es la misma columna repetida y da lo mismo cuál se
+     * lea.
+     *
+     * `null` cuando la página no tiene al menos [HEADERLESS_ROWS] renglones con esa forma: sin
+     * títulos, adivinar la tabla es anotar montos que no existen.
+     */
+    private fun headerless(lines: List<Pair<Double, List<Run>>>): Page? {
+        val rows = lines.mapNotNull { (_, line) -> headerlessRow(line) }
+        if (rows.size < HEADERLESS_ROWS) return null
+        return Page(header = HEADERLESS_HEADER, rows = rows, period = null)
+    }
+
+    /** Un renglón de la tabla sin cabecera, en las columnas de [HEADERLESS_HEADER]. */
+    private fun headerlessRow(line: List<Run>): List<String>? {
+        val runs = line.sortedBy { it.x }
+        val (first, date, inline) = datedRun(runs) ?: return null
+        val right = runs.filter { it.x > first.x }
+        val money = right.filter { MONEY.matches(it.text.trim()) }
+        if (money.isEmpty()) return null
+        // La cuota (`02/03`) es la frontera: a su izquierda va el precio de la compra y a su
+        // derecha, lo que se cobra este mes.
+        val installment = right.firstOrNull { INSTALLMENT.matches(it.text.trim()) }
+        val price = money
+            .filter { row -> installment == null || row.x < installment.x }
+            .minByOrNull { it.x }
+        val monthly = installment?.let { edge -> money.filter { it.x > edge.x }.maxByOrNull { it.x } }
+        // El comercio: lo que va entre la fecha y la primera columna de plata, sin la marca de
+        // titular (`T`) ni el mes de facturación (`nov-2026`), que son columnas y no el nombre.
+        val edge = minOf(price?.x ?: Double.MAX_VALUE, installment?.x ?: Double.MAX_VALUE)
+        val merchant = (
+            listOf(inline) + right
+                .filter { it.x < edge && !MONEY.matches(it.text.trim()) }
+                .map { it.text.trim() }
+            )
+            .filter { text -> text.length > 1 && !MONTH.matches(text) }
+            .joinToString(" ")
+        if (merchant.isEmpty()) return null
+        // La CMR escribe el pago de la tarjeta con el signo en el monto (`-208.962`), y para la app
+        // un monto negativo en esa columna es un cargo. Se deja como lo escribe Falabella —el monto
+        // en positivo y el signo en la columna de la cuota—, que es la forma que la importación
+        // reconoce como plata que entra a la tarjeta.
+        val charge = price?.text?.trim().orEmpty()
+        val payment = charge.startsWith("-")
+        val monthlyText = when {
+            monthly != null -> monthly.text.trim()
+            payment -> "-" + charge.removePrefix("-").trim()
+            else -> ""
         }
-        return table(lines, textGrid(runs, lines.size))
+        return listOf(
+            date,
+            repair(merchant),
+            if (payment) charge.removePrefix("-").trim() else charge,
+            installment?.text?.trim().orEmpty(),
+            monthlyText,
+        )
+    }
+
+    /**
+     * El trozo que trae la fecha de un renglón, con lo que venga pegado a ella. Hay bancos que
+     * dibujan la fecha sola (`12/10/2026` y el comercio en el trozo de al lado) y otros que la pegan
+     * al comercio en el mismo trozo (`23/09/2026 C moran`).
+     */
+    private fun datedRun(runs: List<Run>): Triple<Run, String, String>? {
+        for (run in runs) {
+            val text = run.text.trim()
+            DATE_AND_TEXT.matchEntire(text)?.let { match ->
+                val date = match.groupValues[1]
+                if (dateOf(date) != null) return Triple(run, date, match.groupValues[2].trim())
+            }
+            if (dateOf(text) != null) return Triple(run, text, "")
+        }
+        return null
     }
 
     /** Las columnas de una tabla: sus fronteras y, si salieron del texto, dónde terminan los montos. */
@@ -866,4 +955,23 @@ object Pdf {
     private val SHORT_DATE = Regex("""(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?""")
 
     private val FULL_DATE = Regex("""\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b""")
+
+    /** Un renglón de la tarjeta sin cabecera: la fecha y, en el mismo trozo, el comercio. */
+    private val DATE_AND_TEXT = Regex("""^(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\s+(\S.*)$""")
+
+    /** La cuota de la compra (`02/03`): no es plata, y separa el precio de la cuota del mes. */
+    private val INSTALLMENT = Regex("""^\d{1,2}/\d{1,2}$""")
+
+    /** El mes de facturación de la fila (`nov-2026`): es una columna, no parte del comercio. */
+    private val MONTH = Regex("""^[a-z]{3}-\d{4}$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Los títulos que se le ponen a la tabla que el banco no tituló, con los nombres que reconoce
+     * `StatementTemplate`: sin ellos no hay forma de decir qué columna es el monto, y una tabla sin
+     * títulos se puede leer de dos maneras opuestas.
+     */
+    private val HEADERLESS_HEADER = listOf("Fecha", "Descripción", "Monto", "Cuota", "Valor cuota")
+
+    /** Menos renglones que esto no son una tabla: es la hoja del resumen de cupos. */
+    private const val HEADERLESS_ROWS = 3
 }

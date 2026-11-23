@@ -191,6 +191,50 @@ class PdfTest {
     }
 
     @Test
+    fun `el estado de cuenta de la tarjeta sin cabecera se lee por sus columnas`() {
+        // La CMR dibuja el detalle sin títulos —arriba de las filas va el título de la sección y
+        // nada más—, con la fecha en su propia columna y la cuota entre el monto y lo que se cobra
+        // este mes. Las columnas sólo se reconocen por lo que trae cada renglón.
+        val sheet = Pdf.sheet(estadoDeCuenta())!!
+        assertEquals(
+            listOf("Fecha", "Descripción", "Monto", "Cuota", "Valor cuota"),
+            sheet.rows.first(),
+        )
+
+        val rows = StatementImport.read(sheet)!!.rows
+        assertEquals(4, rows.size)
+
+        // La compra en cuotas se anota por lo que se cobra este mes, con el precio de la compra y
+        // la cuota aparte: anotar los $86.980 cada mes es pagar el sillón tres veces.
+        assertEquals(28_993L, rows[0].amount)
+        assertEquals(86_980L, rows[0].originAmount)
+        assertEquals(1, rows[0].installmentNumber)
+        assertEquals(3, rows[0].installmentTotal)
+        assertEquals(Direction.DEBIT, rows[0].direction)
+
+        // `01/01` es una compra pagada de una vez, no una compra en cuotas.
+        assertEquals(23_532L, rows[1].amount)
+        assertNull(rows[1].installmentTotal)
+
+        // El pago de la tarjeta viene con el signo en el monto: es plata que entra a la tarjeta.
+        assertEquals(Direction.CREDIT, rows[2].direction)
+        assertEquals(208_960L, rows[2].amount)
+        assertNull(rows[2].originAmount)
+
+        // Una fila que sólo trae el valor de la cuota —el impuesto de timbres— también es un
+        // movimiento: la columna del monto viene vacía.
+        assertEquals(Direction.DEBIT, rows[3].direction)
+        assertEquals(172L, rows[3].amount)
+    }
+
+    @Test
+    fun `una tabla sin cabecera y con dos filas no se inventa`() {
+        // Sin títulos, dos renglones no son una tabla: puede ser cualquier cosa de la hoja.
+        assertNull(Pdf.sheet(estadoDeCuenta(rows = ESTADO_ROWS.take(2))))
+    }
+
+
+    @Test
     fun `una cartola de dos paginas no mezcla las filas`() {
         val sheet = Pdf.sheet(
             cartola(
@@ -274,6 +318,31 @@ class PdfTest {
             if (row[2].isNotEmpty()) page.text(right(CARGO, row[2]), y, row[2])
             if (row[3].isNotEmpty()) page.text(right(ABONO, row[3]), y, row[3])
             page.text(right(SALDO, row[4]), y, row[4])
+        }
+        return page.build()
+    }
+
+    /**
+     * Un estado de cuenta de tarjeta como el de la CMR: sin una línea de rejilla, sin cabecera de
+     * tabla —arriba de las filas va el título de la sección— y con la fecha en su propia columna,
+     * la marca de titular (`T`), el monto, la cuota (`01/01`) y lo que se cobra este mes, en ese
+     * orden de izquierda a derecha.
+     */
+    private fun estadoDeCuenta(rows: List<List<String>> = ESTADO_ROWS): ByteArray {
+        val page = Page()
+        page.text(36.67, 780.0, "ESTADO DE CUENTA")
+        page.text(36.67, 570.0, "COMPRAS NACIONALES")
+        rows.forEachIndexed { index, row ->
+            val y = 548.0 - index * 13.0
+            page.text(36.67, y, row[0])
+            page.text(101.22, y, row[1])
+            page.text(150.12, y, row[2])
+            page.text(301.39, y, "T")
+            if (row[3].isNotEmpty()) page.text(331.6, y, row[3])
+            if (row[4].isNotEmpty()) page.text(392.11, y, row[4])
+            if (row[5].isNotEmpty()) page.text(432.25, y, row[5])
+            page.text(471.23, y, row[6])
+            if (row[7].isNotEmpty()) page.text(537.0, y, row[7])
         }
         return page.build()
     }
@@ -465,6 +534,19 @@ class PdfTest {
 
         /** Así viene el nombre en el archivo del banco: codificado tres veces. */
         const val MOJIBAKE = "sebasti\u00C3\u00C2\u00C2\u00A1n"
+
+        /**
+         * Las filas del estado de cuenta de la tarjeta, en el orden en que las dibuja el banco:
+         * ciudad, fecha, comercio, monto, monto otra vez, cuota, mes de facturación y lo que se
+         * cobra este mes. La tercera trae el pago con el signo en el monto y la última el impuesto,
+         * que sólo trae la columna de la derecha.
+         */
+        val ESTADO_ROWS = listOf(
+            listOf("S/I", "12/10/2026", "Ikea", "86.980", "86.980", "01/03", "nov-2026", "28.993"),
+            listOf("Santiago", "05/10/2026", "Unired cl enel", "23.532", "23.532", "01/01", "oct-2026", "23.532"),
+            listOf("S/I", "10/10/2026", "Pago tarjeta cmr", "-208.960", "-208.960", "01/01", "oct-2026", ""),
+            listOf("Santiago", "04/11/2026", "Impuesto ite", "", "", "", "nov-2026", "172"),
+        )
 
         /** Seis movimientos; el primero y el último de cada día son los que traen saldo. */
         val MOVEMENTS = listOf(
