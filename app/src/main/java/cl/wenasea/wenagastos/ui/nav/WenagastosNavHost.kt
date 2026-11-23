@@ -33,6 +33,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.ui.balances.BalancesScreen
 import cl.wenasea.wenagastos.ui.capture.CaptureDiagnosticsScreen
 import cl.wenasea.wenagastos.ui.editor.TransactionEditorScreen
@@ -48,10 +49,11 @@ object Routes {
     const val HOME = "home"
 
     /**
-     * Patrón con el mes opcional: la ruta sin argumento (`movements`) también calza, así el tab
-     * funciona igual que el enlace con mes de «Ver movimientos».
+     * Patrón con el mes y la cuenta opcionales: la ruta sin argumento (`movements`) también calza,
+     * así el tab funciona igual que el enlace con mes de «Ver movimientos» y el de una cuenta
+     * desde el detalle de saldos.
      */
-    const val MOVEMENTS = "movements?month={month}"
+    const val MOVEMENTS = "movements?month={month}&account={account}"
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
     const val RULES = "rules"
@@ -61,9 +63,21 @@ object Routes {
 
     fun editor(txId: Long): String = "editor?txId=$txId"
 
-    /** Movimientos en un mes concreto; sin mes, el ViewModel abre en el de hoy. */
-    fun movements(month: YearMonth? = null): String =
-        if (month == null) "movements" else "movements?month=$month"
+    /**
+     * Movimientos en un mes concreto; sin mes, el ViewModel abre en el de hoy. Con `accountId`
+     * abre además filtrado por esa cuenta (Fase 9.2).
+     */
+    fun movements(month: YearMonth? = null, accountId: Long? = null): String = buildString {
+        append("movements")
+        val query = listOfNotNull(
+            month?.let { "month=$it" },
+            accountId?.takeIf { it > 0 }?.let { "account=$it" },
+        )
+        if (query.isNotEmpty()) {
+            append("?")
+            append(query.joinToString("&"))
+        }
+    }
 
     /**
      * Lee el argumento `month` de la ruta. Un texto que no es un mes no tumba la pantalla: se
@@ -71,6 +85,9 @@ object Routes {
      */
     fun monthFrom(raw: String?): YearMonth? =
         raw?.let { text -> runCatching { YearMonth.parse(text) }.getOrNull() }
+
+    /** La cuenta del filtro; `0` o nada es «todas». */
+    fun accountFrom(raw: Long): Long? = raw.takeIf { it > 0 }
 }
 
 private data class Tab(val route: String, val label: String, val emoji: String)
@@ -154,10 +171,15 @@ fun WenagastosNavHost() {
                         nullable = true
                         defaultValue = null
                     },
+                    navArgument("account") {
+                        type = NavType.LongType
+                        defaultValue = 0L
+                    },
                 ),
             ) { entry ->
                 MovementsScreen(
                     initialMonth = Routes.monthFrom(entry.arguments?.getString("month")),
+                    initialAccountId = Routes.accountFrom(entry.arguments?.getLong("account") ?: 0L),
                     onOpenTransaction = { id -> navController.navigate(Routes.editor(id)) },
                     onAddMovement = { navController.navigate(Routes.editor(-1L)) },
                 )
@@ -179,7 +201,12 @@ fun WenagastosNavHost() {
                 CaptureDiagnosticsScreen(onBack = { navController.popBackStack() })
             }
             composable(Routes.BALANCES) {
-                BalancesScreen(onBack = { navController.popBackStack() })
+                BalancesScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenAccount = { accountId ->
+                        navController.navigate(Routes.movements(Dates.currentMonth(), accountId))
+                    },
+                )
             }
             composable(
                 route = Routes.EDITOR,

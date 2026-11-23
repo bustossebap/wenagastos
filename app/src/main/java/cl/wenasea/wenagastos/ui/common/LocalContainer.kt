@@ -25,13 +25,18 @@ object VmFactories {
      * Inicio y Movimientos usan el mismo ViewModel. [month] llega cuando se entra desde «Ver
      * movimientos», para que la lista abra en el mes que se estaba mirando.
      */
-    fun ledger(container: AppContainer, month: YearMonth? = null) = viewModelFactory {
+    fun ledger(
+        container: AppContainer,
+        month: YearMonth? = null,
+        accountId: Long? = null,
+    ) = viewModelFactory {
         initializer {
             LedgerViewModel(
                 container.transactions,
                 container.categories,
                 container.accounts,
                 month,
+                accountId,
             )
         }
     }

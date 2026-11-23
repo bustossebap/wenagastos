@@ -52,11 +52,15 @@ import cl.wenasea.wenagastos.ui.theme.Wena
  * Cada cuenta muestra el saldo calculado y de dónde sale (el corte y lo que se movió después), y
  * permite escribir el saldo que el banco dice hoy. Lo que no tiene corte dice *Sin saldo*: no es
  * cero, es que no se sabe, y contarlo como cero sería mentir.
+ *
+ * Desde la Fase 9.2 cada cuenta lleva a sus movimientos del mes: la pregunta que sigue a un saldo
+ * es qué lo movió.
  */
 @Composable
 fun BalancesScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onOpenAccount: (Long) -> Unit = {},
 ) {
     val container = LocalContainer.current
     val viewModel: BalancesViewModel = viewModel(factory = VmFactories.balances(container))
@@ -108,6 +112,7 @@ fun BalancesScreen(
                 monthSpend = state.monthSpend,
                 credit = state.credit,
                 onEdit = { editing = it },
+                onOpenMovements = onOpenAccount,
             )
         }
 
@@ -200,6 +205,7 @@ private fun InstitutionCard(
     monthSpend: Map<Long, Long>,
     credit: Map<Long, CreditUsage>,
     onEdit: (AccountBalance) -> Unit,
+    onOpenMovements: (Long) -> Unit,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -236,6 +242,7 @@ private fun InstitutionCard(
                     monthSpend = monthSpend[balance.account.id] ?: 0L,
                     usage = credit[balance.account.id],
                     onEdit = { onEdit(balance) },
+                    onOpenMovements = { onOpenMovements(balance.account.id) },
                 )
             }
         }
@@ -248,6 +255,7 @@ private fun AccountRow(
     monthSpend: Long,
     usage: CreditUsage?,
     onEdit: () -> Unit,
+    onOpenMovements: () -> Unit,
 ) {
     val debt = balance.account.kind == AccountKind.CREDIT
     Row(
@@ -295,11 +303,19 @@ private fun AccountRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            TextButton(
-                onClick = onEdit,
-                contentPadding = PaddingValues(horizontal = 4.dp),
-            ) {
-                Text("Saldo", style = MaterialTheme.typography.labelMedium)
+            Row {
+                TextButton(
+                    onClick = onOpenMovements,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    Text("Movimientos", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(
+                    onClick = onEdit,
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    Text("Saldo", style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }

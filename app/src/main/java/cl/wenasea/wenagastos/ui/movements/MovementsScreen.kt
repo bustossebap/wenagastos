@@ -1,13 +1,21 @@
 package cl.wenasea.wenagastos.ui.movements
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,14 +23,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.wenasea.wenagastos.data.local.entity.AccountEntity
 import cl.wenasea.wenagastos.data.local.entity.Direction
 import cl.wenasea.wenagastos.domain.Dates
+import cl.wenasea.wenagastos.domain.Ledger
 import cl.wenasea.wenagastos.domain.Money
 import cl.wenasea.wenagastos.ui.common.AddMovementButton
+import cl.wenasea.wenagastos.ui.common.BankLogo
 import cl.wenasea.wenagastos.ui.common.EmptyState
 import cl.wenasea.wenagastos.ui.common.LedgerRule
 import cl.wenasea.wenagastos.ui.common.LocalContainer
@@ -40,17 +54,21 @@ fun MovementsScreen(
     modifier: Modifier = Modifier,
     /** Mes con el que abre: llega desde «Ver movimientos» en Inicio. */
     initialMonth: YearMonth? = null,
+    /** Cuenta con la que abre: llega desde «Movimientos» en el detalle de Saldos. */
+    initialAccountId: Long? = null,
     onOpenTransaction: (Long) -> Unit = {},
     onAddMovement: () -> Unit = {},
 ) {
     val container = LocalContainer.current
     val viewModel: LedgerViewModel =
-        viewModel(factory = VmFactories.ledger(container, initialMonth))
+        viewModel(factory = VmFactories.ledger(container, initialMonth, initialAccountId))
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     val grouped = remember(state.transactions) {
         state.transactions.groupBy { Dates.toLocalDate(it.occurredAt) }
     }
+    // Las cuentas del filtro, en el orden del cálculo: las archivadas no se ofrecen.
+    val filterAccounts = remember(state.accounts) { Ledger.selectable(state.accounts.values) }
     // El subtotal del encabezado sólo aparece si hay algo que sumar: "$0" en cada día que sólo
     // tuvo abonos se lee como un error.
     val expensesLabel = when {
@@ -71,7 +89,8 @@ fun MovementsScreen(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "Todo lo que entró y salió este mes",
+                    text = state.accountName?.let { "Lo que pasó en $it" }
+                        ?: "Todo lo que entró y salió este mes",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -84,6 +103,34 @@ fun MovementsScreen(
                 onPrevious = viewModel::previousMonth,
                 onNext = viewModel::nextMonth,
             )
+        }
+
+        // Fase 9.2: el mismo mes, visto desde una cuenta. Los chips son cuentas y no categorías:
+        // la pregunta es «¿qué se movió en esta cuenta?», no «en qué se fue la plata».
+        if (filterAccounts.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    AccountChip(
+                        label = "Todas",
+                        account = null,
+                        selected = state.accountId == null,
+                        onClick = { viewModel.selectAccount(null) },
+                    )
+                    filterAccounts.forEach { account ->
+                        AccountChip(
+                            label = account.name,
+                            account = account,
+                            selected = state.accountId == account.id,
+                            onClick = { viewModel.selectAccount(account.id) },
+                        )
+                    }
+                }
+            }
         }
 
         item {
@@ -119,7 +166,12 @@ fun MovementsScreen(
             item {
                 EmptyState(
                     title = "Sin movimientos",
-                    hint = "Cuando agregues un gasto o llegue una notificación del banco, aparecerá acá.",
+                    hint = if (state.accountId != null) {
+                        "Esta cuenta no tuvo movimientos en ${Dates.monthLabel(state.month)}."
+                    } else {
+                        "Cuando agregues un gasto o llegue una notificación del banco, " +
+                            "aparecerá acá."
+                    },
                 )
             }
         } else {
@@ -178,3 +230,59 @@ fun MovementsScreen(
         }
     }
 }
+
+/**
+ * Un chip del filtro: la cuenta con su logo, o *Todas* sin logo. Se dibuja acá y no con
+ * `WenaChip` porque este lleva el logo del banco al canto y el otro es solo texto; el resto del
+ * estilo —radio de 5 dp, borde de 1 dp, `primary` cuando está elegido— es el mismo.
+ */
+@Composable
+private fun AccountChip(
+    label: String,
+    account: AccountEntity?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val shape = RoundedCornerShape(5.dp)
+    Row(
+        modifier = Modifier
+            .defaultMinSize(minHeight = 36.dp)
+            .clip(shape)
+            .background(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+            )
+            .border(
+                width = 1.dp,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.outlineVariant
+                },
+                shape = shape,
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (account != null) {
+            BankLogo(
+                institution = account.institution,
+                colorHex = account.colorHex,
+                size = 18,
+            )
+        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
