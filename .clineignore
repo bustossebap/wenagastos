@@ -1,0 +1,6 @@
+# Artefactos de build y caché: se regeneran solos y no aportan contexto.
+# .idea/ queda fuera a propósito: puede guardar configuración útil del proyecto.
+**/build/
+.gradle/
+.kotlin/
+.DS_Store

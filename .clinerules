@@ -1,0 +1,98 @@
+# Wenagastos — reglas de trabajo
+
+## 0. La regla que manda sobre todas
+Ninguna regla de ahorro justifica adivinar. Si una duda bloquea una decisión
+correcta, amplía la lectura o la verificación y di en una línea qué necesitabas
+y por qué. El objetivo es menos contexto inútil, no menos comprensión.
+
+## 1. Entrada
+1. Lee `docs/estado.md` antes de cualquier otra cosa: es la instantánea del ahora.
+2. Si el objetivo no está ahí, pídelo. No lo deduzcas explorando el repositorio.
+3. Dueños únicos de la información:
+   - `README.md` → qué es, cómo se compila, tabla de estado por fase, problemas
+     conocidos y hoja de ruta.
+   - `docs/fases.md` → crónica histórica: el porqué de cada fase.
+   - `docs/pruebas.md` → cómo probar cada escenario a mano.
+   - `docs/diseno.md` → sistema visual.
+   - `docs/estado.md` → el ahora: fase, objetivo, verificado, pendientes.
+   - KDoc → porqué local de una decisión; si pasa de ~10 líneas, el detalle va a
+     la fase correspondiente de `docs/fases.md` con un puntero.
+4. No leas un archivo para "entender el proyecto".
+
+## 2. Lectura
+1. Antes de leer, busca: usa las herramientas de búsqueda disponibles en el
+   entorno (búsqueda en el código, grep o equivalente) con el símbolo o el
+   comportamiento exacto, y decide después qué leer. No dependas de un nombre de
+   herramienta concreto: usa la que exista.
+2. Archivo de hasta 150 líneas: lectura completa. Más de 150: solo la función o
+   clase que contiene el símbolo, desde su inicio hasta su llave de cierre. Más
+   de 500: nunca completo, salvo que la tarea sea reescribir ese archivo.
+3. Documentación (`README.md`, `docs/fases.md`, `docs/pruebas.md`,
+   `docs/diseno.md`): siempre por sección y por rango, nunca enteros.
+4. Presupuesto por ronda: ~4 archivos u ~800 líneas. Si lo pasas, di por qué en
+   una línea.
+5. Desde la tercera ronda de lectura, escribe en una línea qué buscas antes de
+   leer.
+6. Prohibido: `find` sin filtro, listar el árbol completo del repositorio, `cat`
+   de directorios y leer `build/`, `.gradle/` o `.kotlin/`.
+7. Pruebas: no esperes que se te nombre el archivo. Localiza con las herramientas
+   de búsqueda las pruebas que cubren el comportamiento afectado —por símbolo,
+   por nombre de clase o por el texto que aseveran— y lee las 1 o 2 más
+   pertinentes. Prohibido listar el directorio de pruebas completo. Leer una
+   prueba que fija el contrato es trabajo, no lujo: es lo que evita romper algo.
+8. `app/schemas` solo en tareas de migración.
+
+## 3. Antes de editar
+1. Escribe el criterio de aceptación en 1 a 3 líneas verificables.
+2. Nombra el `archivo:símbolo` que vas a tocar. Si son más de 2 archivos o toca
+   esquema, respaldo, migración o dependencias, presenta un plan primero.
+3. Verifica antes de "arreglar": si el código ya hace lo pedido, dilo y no toques
+   nada.
+
+## 4. Verificación
+1. `:app:compileDebugKotlin` cuando el cambio esté tomando forma; no acumules
+   ediciones sin compilar.
+2. Al cerrar: `./gradlew :app:testDebugUnitTest`, o `--tests <Clase>` si el cambio
+   es local. Filtra la salida para leer solo lo que importa.
+3. Di qué prueba demuestra el cambio. Si no existe, es un hallazgo, no un
+   trámite.
+4. Pruebas instrumentadas solo con `ANDROID_SERIAL` apuntando al emulador. Nunca
+   en el teléfono: desinstalan la app y borran la base cifrada.
+5. Si no verificaste, escribe NO VERIFICADO y por qué. Nunca "debería funcionar".
+
+## 5. Cierre
+1. Reporte de 8 líneas como máximo:
+   - Cambios: `archivo:símbolo` → qué.
+   - Verificado: comando → resultado literal.
+   - No verificado: qué y por qué.
+   - Siguiente paso: 1 a 3 viñetas.
+2. Actualiza `docs/estado.md` solo si cambió alguno de estos campos: fase,
+   objetivo, arquitectura, un comportamiento no obvio del código, un bug, un
+   resultado verificado o los próximos pasos. Un arreglo menor que no altera
+   ninguno de ellos no toca `estado.md`.
+
+## 6. Contexto y sesiones
+1. Una conversación por objetivo de trabajo coherente. Las correcciones que
+   pertenecen a la misma funcionalidad van en el mismo hilo.
+2. Abre un hilo nuevo cuando cambia el objetivo, no cuando aparece una tarea
+   pequeña. Antes de cerrar, actualiza `docs/estado.md`.
+3. Si el hilo ya cargó mucho contexto ajeno al objetivo actual, cerrarlo con
+   `estado.md` y empezar limpio sale más barato que seguir.
+4. No repitas contenido que ya está en el contexto: no re-leas lo ya leído ni
+   re-pegues salidas de herramientas. Si necesitas un dato que ya apareció,
+   búscalo en el hilo antes de volver al archivo.
+5. No reescribas el plan completo en cada mensaje: escríbelo una vez y
+   actualízalo.
+6. Al resumir o compactar, conserva: rutas `archivo:símbolo`, resultados
+   literales de verificación, decisiones tomadas y sus motivos, pendientes con su
+   causa y los próximos pasos. Descarta: salidas de herramientas ya consumidas,
+   intentos sin aprendizaje y narración de pasos.
+
+## 7. Límites de cambio
+1. Código y comentarios en español, como el repositorio. KDoc nuevo: el porqué y
+   los límites conocidos; si pasa de ~10 líneas, el detalle va a la fase
+   correspondiente de `docs/fases.md` con un puntero.
+2. Sin dependencias nuevas sin pedirlo. Sin refactor fuera de alcance. Sin
+   archivos no pedidos.
+3. Una tarea documental no toca Kotlin, pruebas, esquemas, dependencias ni
+   configuración funcional de Gradle.
