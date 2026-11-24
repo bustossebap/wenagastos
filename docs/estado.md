@@ -19,14 +19,25 @@ vive en el README (`## Siguiente`); aquí solo lo que está en curso.
   Saldos/Inicio. Hay que confirmarlo antes de cerrar la fase. Mientras no se
   confirme, la fase 9.5 sigue **abierta** y su descripción no se cambia.
 
+- **Sin commitear en el árbol (trabajo de una sesión anterior):** mecánica de
+  traspasos con dos patas —`findUnlinkedLeg` en `TransactionDao`/`Repositories`,
+  ventana de 3 días—, corrección al reimportar del traspaso que la cartola vieja
+  anotó como gasto, el abono de la planilla de tarjeta como pago aunque no traiga
+  resumen, el cupo y las fechas del resumen que pisan lo escrito a mano, y el
+  desglose fijo / variable / ahorro por cuenta. Los comentarios lo llaman «Fase
+  9.7», pero el README reserva 9.7 para reportes por cuenta: el número está por
+  decidir.
+
 ## Último verificado
 - Lectura de código (esta sesión): `BalancesViewModel.kt` ya calcula
   `monthFixed` / `monthVariable` / `monthSavings` y los expone en el estado de la
   pantalla, y `BalancesSummaryCard.kt` dibuja la fila correspondiente. No
   reimplementarlo.
-- NO VERIFICADO en esta sesión: la suite no se ejecutó. Último conteo documentado
-  en el README: **339 pruebas en la JVM** (Fase 9.6). La cifra vigente hay que
-  sacarla de una corrida real.
+- Suite completa (24-11-2026): **346 pruebas en la JVM, 0 fallas, 0 errores**
+  (`:app:testDebugUnitTest` con JDK 21; Gradle respondió UP-TO-DATE y los XML de
+  `app/build/test-results` dan 346/0/0). Incluye el trabajo de traspasos que aún
+  no está commiteado. Sin `JAVA_HOME` apuntando al JDK 21 la corrida ni siquiera
+  configura: el `java` del sistema es 8.
 
 ## Hechos del código que cuestan redescubrir
 - El saldo no se guarda: se calcula con el último corte (`account_snapshots`) más
@@ -42,9 +53,11 @@ vive en el README (`## Siguiente`); aquí solo lo que está en curso.
 - Fase 9.6, segunda mitad: que el pago de la tarjeta descuente de la cuenta
   corriente y que las dos patas se enlacen solas cuando lleguen las dos cartolas.
 - Avisos reales de los seis bancos: la calibración sigue en curso según el README.
-- Árbol de trabajo sin commitear: varios `.kt` modificados, más
-  `BalancesViewModel.kt.bak` y `ScratchRealCartolaTest.kt` sin seguimiento.
-  Revisar antes de commitear o limpiar.
+- Árbol de trabajo: 14 archivos `.kt` modificados (+816/−375) y dos sueltos:
+  `BalancesViewModel.kt.bak` (la versión previa del archivo, sin el desglose) y
+  `ScratchRealCartolaTest.kt` (su propio KDoc dice «temporal… se borra al
+  terminar», pero corre en la suite: 1 prueba que lee cartolas de `/tmp`).
+  Decidir si se commitea el trabajo de traspasos y se limpian los dos sueltos.
 - `docs/fases.md` conserva la frase «hoy v6» tal como se escribió en su fase; la
   versión vigente es la 9.
 - El README (`## Siguiente`) repite, condensada, la crónica de las fases 5.1,
