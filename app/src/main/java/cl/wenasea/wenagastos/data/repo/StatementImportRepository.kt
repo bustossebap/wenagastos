@@ -43,6 +43,11 @@ data class StatementReport(
     val learnedLimit: Long? = null,
     val learnedStatementDay: Int? = null,
     val learnedPaymentDay: Int? = null,
+    /**
+     * La deuda que el resumen imprimía y no se anotó porque la cuenta no es una tarjeta. Se dice en
+     * el reporte en vez de callarla: el archivo la traía.
+     */
+    val ignoredSummary: Long? = null,
 ) {
 
     /** El resumen que se muestra al terminar, en el mismo tono que el resto de la app. */
@@ -100,6 +105,10 @@ data class StatementReport(
                     else -> "El saldo que informa no es más nuevo que el corte que ya tenía la cuenta."
                 },
             )
+        }
+        if (ignoredSummary != null) {
+            append(" El resumen dice que se deben ${Money.format(ignoredSummary)}")
+            append(", pero esta cuenta no es una tarjeta: no lo anoté como su saldo.")
         }
         if (learnedLimit != null) {
             append(" El cupo de la tarjeta quedó en ${Money.format(learnedLimit)}.")
@@ -170,7 +179,8 @@ class StatementImportRepository(
      * @param now el instante de la importación, para recortar el corte de un archivo del día en
      * curso: el cierre de hoy todavía no llegó.
      * @param summary lo que el estado de cuenta imprime fuera de la tabla (cupo, facturado, deuda).
-     * Sólo lo trae el PDF de una tarjeta, y sólo se usa si la cuenta es de crédito.
+     * Sólo lo trae el PDF de una tarjeta, y sólo se usa si la cuenta es de crédito: en otra cuenta
+     * el dato se ignora y el reporte lo dice.
      */
     suspend fun import(
         accountId: Long,
@@ -183,6 +193,11 @@ class StatementImportRepository(
         // el de su columna, y un cupo no dice nada de la plata que hay.
         val account = accounts.get(accountId)
         val card = summary?.takeIf { account?.kind == AccountKind.CREDIT && !it.isEmpty }
+        // El resumen de una tarjeta en una cuenta que no es tarjeta: el archivo lo traía, así que se
+        // dice en el reporte en vez de callarlo (una cuenta corriente no tiene cupo ni facturación).
+        val ignoredSummary = summary
+            ?.let { it.debt ?: it.billed }
+            ?.takeIf { account?.kind != AccountKind.CREDIT }
         var added = 0
         var repeated = 0
         var pending = 0
@@ -212,7 +227,9 @@ class StatementImportRepository(
                 val filled = complete(existing, row, payment)
                 if (filled != null) {
                     transactions.save(filled)
-                    completed++
+                    // Un pago que se corrige no es un comercio que se completa: el reporte los
+                    // cuenta aparte para poder decir que esa plata no era un ingreso.
+                    if (payment && !existing.isTransfer) payments++ else completed++
                 }
                 continue
             }
@@ -340,6 +357,7 @@ class StatementImportRepository(
             learnedLimit = learnedLimit,
             learnedStatementDay = learnedStatementDay,
             learnedPaymentDay = learnedPaymentDay,
+            ignoredSummary = ignoredSummary,
         )
     }
 
@@ -347,6 +365,11 @@ class StatementImportRepository(
      * Completa un movimiento que quedó a medias: el aviso del banco dijo "te transfirieron
      * $12.000" y la cartola dice quién fue. Nunca pisa un nombre que ya estaba, y a un traspaso no
      * lo toca: esos no llevan comercio.
+     *
+     * El segundo arreglo no es del comercio sino de la plata: un pago de la tarjeta que quedó
+     * anotado como ingreso —lo escribió el aviso del banco, o una importación de antes de la Fase
+     * 9.6— se convierte en traspaso aunque no haya nada más que completar. Reimportar el estado de
+     * cuenta es justamente el momento de corregirlo: esa plata no se ganó, cambió de lugar.
      */
     private suspend fun complete(
         existing: TransactionEntity,
@@ -354,17 +377,20 @@ class StatementImportRepository(
         payment: Boolean,
     ): TransactionEntity? {
         if (existing.isTransfer) return null
-        if (!MerchantQuality.isGeneric(existing.merchantRaw)) return null
-        if (row.merchant.isEmpty() || MerchantQuality.isGeneric(row.merchant)) return null
+        // Un pago se corrige siempre —arriba ya se vio que este movimiento no es traspaso—; el
+        // comercio, sólo si al movimiento le faltaba uno.
+        val merchant = row.merchant.takeIf { it.isNotEmpty() && !MerchantQuality.isGeneric(it) }
+        val learned = merchant?.takeIf { MerchantQuality.isGeneric(existing.merchantRaw) }
+        if (!payment && learned == null) return null
         return existing.copy(
-            merchantRaw = row.merchant,
-            merchantNorm = row.merchant.lowercase(),
+            merchantRaw = learned ?: existing.merchantRaw,
+            merchantNorm = learned?.lowercase() ?: existing.merchantNorm,
             // La cuota la sabe la cartola y el aviso del banco no: si la fila la trae, se anota.
             installmentNumber = row.installmentNumber ?: existing.installmentNumber,
             installmentTotal = row.installmentTotal ?: existing.installmentTotal,
             originAmount = row.originAmount ?: existing.originAmount,
-            // El pago de la tarjeta se completa igual, pero queda como traspaso: la cartola acaba
-            // de decir que esa plata entró a la tarjeta.
+            // El pago de la tarjeta queda como traspaso y sin categoría: lo que dice la cartola es
+            // que esa plata entró a la tarjeta, no que fuera un gasto ni un ingreso.
             categoryId = if (payment) {
                 null
             } else {
@@ -378,8 +404,10 @@ class StatementImportRepository(
             },
             isTransfer = payment,
             isExpense = existing.isExpense && !payment,
-            status = TransactionStatus.CONFIRMED,
-            notes = null,
+            // Lo que no se aprendió se deja como estaba: un pago que sólo se convierte en traspaso
+            // no gana un comercio que el banco no escribió, ni borra la nota de que falta.
+            status = if (learned != null) TransactionStatus.CONFIRMED else existing.status,
+            notes = if (learned != null) null else existing.notes,
             rawText = existing.rawText ?: row.rawText,
         )
     }

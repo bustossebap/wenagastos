@@ -325,6 +325,11 @@ class StatementImportRepositoryTest {
             "12/10/2026;Ikea;86.980;01/03;28.993\n" +
             "10/10/2026;Pago tarjeta cmr;208.960;;-208.960\n"
 
+    /** El pago solo, como lo imprime la CMR: la plata en positivo y el signo en la columna de al lado. */
+    private val pagoDelBanco =
+        "Fecha;Descripción;Monto;Cuota;Valor cuota\n" +
+            "10/10/2026;Pago tarjeta cmr;208.960;;-208.960\n"
+
     @Test
     fun `la deuda y el cupo del resumen quedan en la tarjeta`() = runBlocking {
         val id = account(AccountKind.CREDIT)
@@ -356,6 +361,8 @@ class StatementImportRepositoryTest {
         assertEquals(1_500_000L, report.learnedLimit)
         assertEquals(4, report.learnedStatementDay)
         assertEquals(20, report.learnedPaymentDay)
+        // La cuenta sí es una tarjeta: el resumen se usó, no se ignora.
+        assertNull(report.ignoredSummary)
     }
 
     @Test
@@ -463,5 +470,47 @@ class StatementImportRepositoryTest {
         assertNull(saved.statementDay)
         assertNull(report.learnedLimit)
         assertEquals(0, report.payments)
+        // El archivo imprimía la deuda: se avisa que no se anotó, en vez de callar el dato y dejar
+        // al usuario con un saldo que no es el del banco.
+        assertEquals(700_000L, report.ignoredSummary)
+        assertTrue(report.describe().contains("no es una tarjeta"))
+    }
+
+    @Test
+    fun `un pago que entro como ingreso se corrige al reimportar`() = runBlocking {
+        val id = account(AccountKind.CREDIT)
+        // Como lo dejaba la importación de antes de la Fase 9.6: el pago del banco entró como un
+        // abono más, sin traspaso y sumando al ingreso del mes.
+        repository.import(
+            id,
+            sheet("Fecha;Descripción;Cargo;Abono\n10/10/2026;Pago tarjeta cmr;;208.960\n"),
+            now = Dates.endOfDay(LocalDate.of(2026, 11, 15)),
+        )
+        val antes = stored().single()
+        assertTrue(!antes.isTransfer)
+        assertEquals(208_960L, Reports.income(stored()))
+
+        // El estado de cuenta trae el mismo pago con el signo en el monto: se reconoce como el mismo
+        // movimiento y se corrige, aunque el comercio ya estuviera puesto.
+        val report = repository.import(
+            id,
+            sheet(pagoDelBanco),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen,
+        )
+
+        assertEquals(1, report.payments)
+        assertEquals(0, report.completed)
+        val pago = stored().single()
+        assertTrue(pago.isTransfer)
+        assertNull(pago.categoryId)
+        assertTrue(!pago.isExpense)
+        // El comercio que ya tenía no se pierde.
+        assertEquals("Pago tarjeta cmr", pago.merchantRaw)
+        assertEquals(0L, Reports.income(stored()))
+        assertTrue(report.describe().contains("traspaso, no como ingreso"))
+        // Y el corte de la tarjeta se guarda igual: la reimportación sirve para las dos cosas.
+        assertTrue(report.snapshotSaved)
+        assertEquals(-700_000L, report.balance)
     }
 }
