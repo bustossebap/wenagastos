@@ -97,6 +97,46 @@ class StatementImportTest {
     }
 
     @Test
+    fun `la planilla de la tarjeta no anota el saldo inicial y el pago entra como abono`() {
+        // El Excel del banco lista primero el saldo con el que abre el período —la deuda de la
+        // factura anterior, con el monto en la columna del cargo— y después los movimientos.
+        // Anotarlo duplicaba la deuda de la tarjeta, y el pago, que viene en la columna del abono,
+        // quedaba como plata que entra a la cuenta.
+        val sheet = read(
+            "Fecha;Tipo;Detalle;Monto cargo;Monto abono\n" +
+                "26/10/2026;;SALDO INICIAL;$-326.759;\n" +
+                "04/11/2026;;PAGO;;$326.759\n" +
+                "7/11/2026;:COMIDAS DE AUTOSERVICIO;SUC LIRA 43;$-3.380;\n",
+        )
+
+        assertEquals(2, sheet.rows.size)
+        assertEquals(1, sheet.skipped)
+
+        val pago = sheet.rows[0]
+        assertEquals(Direction.CREDIT, pago.direction)
+        assertEquals(326_759L, pago.amount)
+        assertTrue(pago.isPayment)
+
+        val compra = sheet.rows[1]
+        assertEquals(date(2026, 11, 7), compra.date)
+        assertEquals(Direction.DEBIT, compra.direction)
+        assertEquals(3_380L, compra.amount)
+        assertEquals("SUC LIRA 43", compra.merchant)
+        assertTrue(!compra.isPayment)
+    }
+
+    @Test
+    fun `una fecha con el mes sin cero adelante tambien se lee`() {
+        // La planilla exportada de la tarjeta escribe `11/7/2026`: con el formato estricto julio
+        // tenía que ser `07` y la fila se caía sin decir nada.
+        val sheet = read("Fecha;Detalle;Monto cargo;Monto abono\n11/7/2026;SUC LIRA;$-3.380;\n")
+
+        assertEquals(date(2026, 7, 11), sheet.rows[0].date)
+        assertEquals(3_380L, sheet.rows[0].amount)
+        assertEquals(Direction.DEBIT, sheet.rows[0].direction)
+    }
+
+    @Test
     fun `los centavos y el signo de miles se leen como pesos`() {
         val sheet = read("Fecha;Descripción;Monto\n18/11/2026;LIDER;12.345,00\n")
 
@@ -342,5 +382,34 @@ class StatementImportTest {
         assertEquals(3, sheet.rows.size)
         assertEquals(93_000L, sheet.balance)
         assertEquals(date(2026, 11, 23), sheet.balanceDate)
+    }
+
+    @Test
+    fun `una fila de traspaso se marca, pero una transferencia a un nombre no`() {
+        // El banco llama «traspaso» a mover plata entre cuentas del mismo dueño; una transferencia a
+        // un tercero lleva el nombre de quien la recibe. Son dos cosas distintas y sólo la primera se
+        // anota como movimiento entre cuentas propias (Fase 9.6).
+        val sheet = read(
+            "Fecha;Descripción;Cargo;Abono\r\n" +
+                "18/11/2026;Traspaso Internet de Cta.Cte.;;675.109\r\n" +
+                "19/11/2026;Traspaso Internet a T. Crédito;326.759;\r\n" +
+                "20/11/2026;TRANSF A SEBASTIAN BUSTOS;50.000;\r\n" +
+                "21/11/2026;Transf para Pago Tarjeta CMR;214.084;\r\n" +
+                "22/11/2026;MERCADO PAGO 4 TCOM;9.990;\r\n",
+        )
+
+        assertEquals(5, sheet.rows.size)
+        assertTrue(sheet.rows[0].isTransfer)
+        assertTrue(sheet.rows[1].isTransfer)
+        // Una transferencia a un nombre puede ser un tercero: sigue siendo gasto.
+        assertTrue(!sheet.rows[2].isTransfer)
+        // El pago de la tarjeta desde la cuenta con la que se paga tampoco es un gasto.
+        assertTrue(sheet.rows[3].isTransfer)
+        // «Mercado Pago» es un comercio: la palabra «pago» sola no marca nada.
+        assertTrue(!sheet.rows[4].isTransfer)
+        // El traspaso no es el abono de una tarjeta: la columna de abono se marca como pago —en una
+        // tarjeta lo sería— y quién tiene la cuenta decide. Lo que dice el banco con la palabra
+        // «traspaso» es otra cosa, y se marca aparte.
+        assertTrue(!sheet.rows[1].isPayment)
     }
 }

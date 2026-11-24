@@ -366,7 +366,10 @@ class StatementImportRepositoryTest {
     }
 
     @Test
-    fun `un cupo que el usuario ya habia escrito no se pisa con el del resumen`() = runBlocking {
+    fun `el cupo y las fechas del resumen pisan lo que el usuario habia escrito`() = runBlocking {
+        // El cupo lo dice el banco: el número que se escribió a mano en el diálogo es una estimación
+        // y puede estar equivocada. Antes se conservaba el escrito y la tarjeta quedaba con un cupo
+        // que no era el suyo, así que el disponible no calzaba con el de la página del banco.
         val id = accounts.add(
             AccountEntity(
                 name = "Falabella CMR",
@@ -386,13 +389,247 @@ class StatementImportRepositoryTest {
         )
 
         val saved = accounts.get(id)!!
-        assertEquals(900_000L, saved.creditLimit)
-        assertEquals(15, saved.statementDay)
-        // El día de pago no lo tenía configurado: ese sí se aprende.
+        assertEquals(1_500_000L, saved.creditLimit)
+        assertEquals(4, saved.statementDay)
         assertEquals(20, saved.paymentDay)
-        assertNull(report.learnedLimit)
-        assertNull(report.learnedStatementDay)
+        assertEquals(1_500_000L, report.learnedLimit)
+        assertEquals(900_000L, report.limitBefore)
+        assertEquals(4, report.learnedStatementDay)
+        assertEquals(15, report.statementDayBefore)
         assertEquals(20, report.learnedPaymentDay)
+        assertNull(report.paymentDayBefore)
+        // El reporte cuenta de cuánto a cuánto, para que el cambio no pase inadvertido.
+        assertTrue(report.describe().contains("antes $900.000"))
+    }
+
+    @Test
+    fun `sin cupo en el resumen se respeta el que habia escrito`() = runBlocking {
+        // Un resumen sin cupo no dice nada del cupo: lo escrito se queda como estaba.
+        val id = accounts.add(
+            AccountEntity(
+                name = "Falabella CMR",
+                institution = Institution.FALABELLA,
+                kind = AccountKind.CREDIT,
+                colorHex = Institution.FALABELLA.colorHex,
+                creditLimit = 900_000L,
+            ),
+        )
+
+        val report = repository.import(
+            id,
+            sheet(estadoDeCuenta),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+            summary = resumen.copy(limit = null, asOf = null, due = null),
+        )
+
+        assertEquals(900_000L, accounts.get(id)!!.creditLimit)
+        assertNull(report.learnedLimit)
+        assertNull(report.limitBefore)
+    }
+
+    @Test
+    fun `el abono de la planilla de la tarjeta es el pago aunque no traiga resumen`() = runBlocking {
+        // El Excel del banco (Monto cargo / Monto abono) no imprime cupo, así que llega sin resumen.
+        // Aun así el abono de una tarjeta es el pago: si se anota como ingreso, el mes se infla con
+        // plata que sólo cambió de lugar.
+        val id = account(AccountKind.CREDIT)
+
+        val report = repository.import(
+            id,
+            sheet(
+                "Fecha;Tipo;Detalle;Monto cargo;Monto abono\n" +
+                    "04/11/2026;;PAGO;;326.759\n" +
+                    "07/11/2026;:COMIDAS;SUC LIRA 43;3.380;\n",
+            ),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+
+        assertEquals(1, report.payments)
+        val pago = stored().single { it.direction == Direction.CREDIT }
+        assertTrue(pago.isTransfer)
+        assertNull(pago.categoryId)
+        assertEquals(0L, Reports.income(stored()))
+    }
+
+    @Test
+    fun `el pago de la tarjeta que viene en la cartola corriente se enlaza con el abono`() =
+        runBlocking {
+            // El pago se ve dos veces: sale de la cuenta corriente («Traspaso Internet a T. Crédito»)
+            // y entra a la tarjeta como abono. Antes, la pata del banco quedaba como gasto del mes y
+            // el abono como traspaso suelto, así que la misma plata se contaba dos veces.
+            val card = account(AccountKind.CREDIT)
+            val checking = account(AccountKind.CHECKING)
+            val now = Dates.endOfDay(LocalDate.of(2026, 12, 1))
+            repository.import(card, sheet(pagoDelBanco), now = now)
+            assertNull(stored().single { it.accountId == card }.transferAccountId)
+
+            val report = repository.import(
+                checking,
+                sheet(
+                    "Fecha;Descripción;Cargo;Abono\n" +
+                        "11/10/2026;Traspaso Internet a T. Crédito;208.960;\n",
+                ),
+                now = now,
+            )
+
+            assertEquals(1, report.transfers)
+            assertEquals(1, report.linked)
+            val pata = stored().single { it.accountId == checking }
+            assertTrue(pata.isTransfer)
+            assertTrue(!pata.isExpense)
+            assertNull(pata.categoryId)
+            // Las dos patas se apuntan y comparten grupo: la lista las lee como «cuenta → tarjeta».
+            assertEquals(card, pata.transferAccountId)
+            val abono = stored().single { it.accountId == card }
+            assertEquals(checking, abono.transferAccountId)
+            assertEquals(pata.transferGroupId, abono.transferGroupId)
+            // Ni gasto ni ingreso: la plata cambió de bolsillo.
+            assertEquals(0L, Reports.expenses(stored()))
+            assertEquals(0L, Reports.income(stored()))
+            assertTrue(report.describe().contains("Enlacé el traspaso con su otra pata"))
+        }
+
+    @Test
+    fun `las dos patas del traspaso se enlazan aunque vengan en cartolas distintas`() = runBlocking {
+        val ahorro = account(AccountKind.SAVINGS)
+        val checking = account(AccountKind.CHECKING)
+        val now = Dates.endOfDay(LocalDate.of(2026, 12, 1))
+
+        // Primero entra una sola pata: la otra cuenta no se ha importado, así que queda suelta.
+        val first = repository.import(
+            checking,
+            sheet(
+                "Fecha;Descripción;Cargo;Abono\n" +
+                    "20/11/2026;Traspaso Internet a Cta. Ahorro;40.000;\n",
+            ),
+            now = now,
+        )
+        assertEquals(1, first.transfers)
+        assertEquals(0, first.linked)
+        assertNull(stored().single().transferAccountId)
+
+        // Al día siguiente se importa la otra cartola: la pata que ya estaba en la base se enlaza.
+        val second = repository.import(
+            ahorro,
+            sheet(
+                "Fecha;Descripción;Cargo;Abono\n" +
+                    "21/11/2026;Traspaso Internet de Cta.Cte.;;40.000\n",
+            ),
+            now = now,
+        )
+        assertEquals(1, second.transfers)
+        assertEquals(1, second.linked)
+        val salida = stored().single { it.accountId == checking }
+        val entrada = stored().single { it.accountId == ahorro }
+        assertEquals(ahorro, salida.transferAccountId)
+        assertEquals(checking, entrada.transferAccountId)
+        assertEquals(salida.transferGroupId, entrada.transferGroupId)
+    }
+
+    @Test
+    fun `un traspaso no se enlaza con un movimiento normal del mismo monto`() = runBlocking {
+        // Una compra de $40.000 en otra cuenta no es la otra pata de nada: sólo se enlazan traspasos.
+        val card = account(AccountKind.CREDIT)
+        val checking = account(AccountKind.CHECKING)
+        movements.seed(
+            TransactionEntity(
+                accountId = card,
+                occurredAt = Dates.startOfDay(LocalDate.of(2026, 11, 20)),
+                amount = 40_000L,
+                direction = Direction.CREDIT,
+                merchantRaw = "LIDER",
+                merchantNorm = "lider",
+                status = TransactionStatus.CONFIRMED,
+                isExpense = false,
+            ),
+        )
+
+        val report = repository.import(
+            checking,
+            sheet("Fecha;Descripción;Cargo;Abono\n20/11/2026;Traspaso Internet a Cta. Cte.;40.000;\n"),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+
+        assertEquals(1, report.transfers)
+        assertEquals(0, report.linked)
+        assertNull(stored().single { it.accountId == checking }.transferAccountId)
+        assertNull(stored().single { it.accountId == card }.transferAccountId)
+    }
+
+    @Test
+    fun `una transferencia a un nombre sigue siendo un gasto`() = runBlocking {
+        // «TRANSF A …» nombra a alguien: puede ser un tercero, y adivinar ahí esconde un gasto real.
+        val id = account(AccountKind.CHECKING)
+
+        val report = repository.import(
+            id,
+            sheet("Fecha;Descripción;Cargo;Abono\n20/11/2026;TRANSF A GASTON MENESES;50.000;\n"),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+
+        assertEquals(0, report.transfers)
+        val gasto = stored().single()
+        assertTrue(!gasto.isTransfer)
+        assertTrue(gasto.isExpense)
+        assertEquals(50_000L, Reports.expenses(stored()))
+    }
+
+    @Test
+    fun `un traspaso que la cartola vieja anoto como gasto se corrige al reimportar`() = runBlocking {
+        val id = account(AccountKind.CHECKING)
+        // Como lo dejaba la importación de antes de la Fase 9.7: un traspaso entre cuentas propias
+        // anotado como gasto, con categoría y todo.
+        movements.seed(
+            TransactionEntity(
+                accountId = id,
+                occurredAt = Dates.startOfDay(LocalDate.of(2026, 11, 18)),
+                amount = 675_109L,
+                direction = Direction.DEBIT,
+                merchantRaw = "Traspaso Internet de Cta.Cte.",
+                merchantNorm = "traspaso internet de cta.cte.",
+                status = TransactionStatus.CONFIRMED,
+                isExpense = true,
+            ),
+        )
+        assertEquals(675_109L, Reports.expenses(stored()))
+
+        val report = repository.import(
+            id,
+            sheet("Fecha;Descripción;Cargo;Abono\n18/11/2026;Traspaso Internet de Cta.Cte.;675.109;\n"),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+
+        assertEquals(0, report.added)
+        assertEquals(1, report.repeated)
+        assertEquals(1, report.transfers)
+        val corregido = stored().single()
+        assertTrue(corregido.isTransfer)
+        assertTrue(!corregido.isExpense)
+        assertNull(corregido.categoryId)
+        // El nombre que ya estaba no se pierde.
+        assertEquals("Traspaso Internet de Cta.Cte.", corregido.merchantRaw)
+        assertEquals(0L, Reports.expenses(stored()))
+        assertTrue(report.describe().contains("traspaso entre tus cuentas"))
+    }
+
+    @Test
+    fun `el abono de una cuenta corriente sigue siendo plata que entra`() = runBlocking {
+        // La misma columna, en una cuenta corriente, es un depósito: no se convierte en traspaso.
+        val id = account(AccountKind.CHECKING)
+
+        val report = repository.import(
+            id,
+            sheet(
+                "Fecha;Descripción;Cargo;Abono\n" +
+                    "18/11/2026;TRANSFERENCIA DE JUAN;;50.000\n",
+            ),
+            now = Dates.endOfDay(LocalDate.of(2026, 12, 1)),
+        )
+
+        assertEquals(0, report.payments)
+        val abono = stored().single()
+        assertTrue(!abono.isTransfer)
+        assertEquals(50_000L, Reports.income(stored()))
     }
 
     @Test
@@ -481,10 +718,16 @@ class StatementImportRepositoryTest {
         val id = account(AccountKind.CREDIT)
         // Como lo dejaba la importación de antes de la Fase 9.6: el pago del banco entró como un
         // abono más, sin traspaso y sumando al ingreso del mes.
-        repository.import(
-            id,
-            sheet("Fecha;Descripción;Cargo;Abono\n10/10/2026;Pago tarjeta cmr;;208.960\n"),
-            now = Dates.endOfDay(LocalDate.of(2026, 11, 15)),
+        movements.seed(
+            TransactionEntity(
+                accountId = id,
+                occurredAt = Dates.startOfDay(LocalDate.of(2026, 10, 10)),
+                amount = 208_960L,
+                direction = Direction.CREDIT,
+                merchantRaw = "Pago tarjeta cmr",
+                merchantNorm = "pago tarjeta cmr",
+                status = TransactionStatus.CONFIRMED,
+            ),
         )
         val antes = stored().single()
         assertTrue(!antes.isTransfer)

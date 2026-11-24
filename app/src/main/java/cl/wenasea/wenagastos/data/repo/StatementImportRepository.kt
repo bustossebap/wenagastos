@@ -11,6 +11,7 @@ import cl.wenasea.wenagastos.data.local.entity.TransactionSource
 import cl.wenasea.wenagastos.data.local.entity.TransactionStatus
 import cl.wenasea.wenagastos.domain.Dates
 import cl.wenasea.wenagastos.domain.Money
+import cl.wenasea.wenagastos.domain.opposite
 import cl.wenasea.wenagastos.importexport.StatementImport
 import cl.wenasea.wenagastos.importexport.StatementSummary
 import java.time.LocalDate
@@ -37,12 +38,30 @@ data class StatementReport(
      * deuda y no suman como ingreso (Fase 9.6).
      */
     val payments: Int = 0,
+    /**
+     * Filas que el banco escribió como «Traspaso Internet…»: la misma plata cambiando de cuenta
+     * propia. No se anotan como gasto ni como ingreso, porque no lo son (Fase 9.6).
+     */
+    val transfers: Int = 0,
+    /**
+     * Traspasos que quedaron enlazados con su otra pata: la que ya estaba anotada en otra cuenta,
+     * o la que acaba de entrar en esta misma cartola. En la lista se leen como «Santander →
+     * Falabella» en vez de dos movimientos sueltos.
+     */
+    val linked: Int = 0,
     /** El saldo del corte no vino de una columna del archivo sino del resumen de la tarjeta. */
     val balanceFromSummary: Boolean = false,
-    /** Cifras del resumen que el archivo traía y la cuenta no tenía: quedaron guardadas. */
+    /** Cifras del resumen que quedaron guardadas en la cuenta: el cupo y las dos fechas. */
     val learnedLimit: Long? = null,
     val learnedStatementDay: Int? = null,
     val learnedPaymentDay: Int? = null,
+    /**
+     * Lo que la cuenta tenía antes de que el resumen lo corrigiera. El cupo lo dice el banco, así
+     * que pisa lo que se escribió a mano, y el reporte cuenta de cuánto a cuánto fue.
+     */
+    val limitBefore: Long? = null,
+    val statementDayBefore: Int? = null,
+    val paymentDayBefore: Int? = null,
     /**
      * La deuda que el resumen imprimía y no se anotó porque la cuenta no es una tarjeta. Se dice en
      * el reporte en vez de callarla: el archivo la traía.
@@ -80,6 +99,27 @@ data class StatementReport(
                 },
             )
         }
+        if (transfers > 0) {
+            append(" ")
+            append(
+                if (transfers == 1) {
+                    "1 movimiento era un traspaso entre tus cuentas: no suma en gastos ni en ingresos."
+                } else {
+                    "$transfers movimientos eran traspasos entre tus cuentas: " +
+                        "no suman en gastos ni en ingresos."
+                },
+            )
+        }
+        if (linked > 0) {
+            append(" ")
+            append(
+                if (linked == 1) {
+                    "Enlacé el traspaso con su otra pata."
+                } else {
+                    "Enlacé $linked traspasos con su otra pata."
+                },
+            )
+        }
         if (skipped > 0) {
             append(" Salteé ")
             append(if (skipped == 1) "1 fila" else "$skipped filas")
@@ -111,13 +151,19 @@ data class StatementReport(
             append(", pero esta cuenta no es una tarjeta: no lo anoté como su saldo.")
         }
         if (learnedLimit != null) {
-            append(" El cupo de la tarjeta quedó en ${Money.format(learnedLimit)}.")
+            append(" El cupo de la tarjeta quedó en ${Money.format(learnedLimit)}")
+            if (limitBefore != null) append(", antes ${Money.format(limitBefore)}")
+            append(": lo dice el banco.")
         }
         if (learnedStatementDay != null) {
-            append(" Anoté que la facturación corta el día $learnedStatementDay.")
+            append(" Anoté que la facturación corta el día $learnedStatementDay")
+            if (statementDayBefore != null) append(" (antes decía el $statementDayBefore)")
+            append(".")
         }
         if (learnedPaymentDay != null) {
-            append(" La factura vence el día $learnedPaymentDay.")
+            append(" La factura vence el día $learnedPaymentDay")
+            if (paymentDayBefore != null) append(" (antes decía el $paymentDayBefore)")
+            append(".")
         }
     }
 }
@@ -160,9 +206,18 @@ data class UndoReport(
  *    más nuevo que el que la cuenta ya tenía: un corte viejo no puede pisar uno nuevo.
  *
  * La Fase 9.6 le agregó lo propio de una **tarjeta**: el estado de cuenta no informa saldo, pero sí
- * cuánto se debe y de cuánto es el cupo. La deuda del resumen entra como corte de la tarjeta, las
- * cifras que la cuenta no tenía se guardan en ella, y el pago de la tarjeta se anota como traspaso
- * en vez de ingreso.
+ * cuánto se debe y de cuánto es el cupo. La deuda del resumen entra como corte de la tarjeta, el
+ * cupo y las fechas del resumen **pisan lo que se había escrito a mano** —lo dice el banco— y el
+ * pago de la tarjeta se anota como traspaso en vez de ingreso.
+ *
+ * La Fase 9.6, en su segunda mitad, agrega lo otro que la cartola escribe y que tampoco es plata que
+ * entra o sale: **Traspaso Internet de Cta.Cte.**, **… a T. Crédito**, **… de Cuenta Vista**. Es la
+ * misma plata cambiando de bolsillo propio, y anotada como gasto y como ingreso inflaba los dos
+ * lados del mes
+ * —$675.109 de gastos y $1.101.291 de ingresos en una cartola de noviembre eran traspasos—. Cada
+ * pata se anota como traspaso y, cuando la otra ya está en la base, las dos quedan enlazadas
+ * apuntándose, así la lista dice «Santander → Falabella» y el mes deja de contar la misma plata dos
+ * veces.
  */
 class StatementImportRepository(
     private val runner: TransactionRunner,
@@ -192,7 +247,8 @@ class StatementImportRepository(
         // El resumen de la tarjeta sólo sirve en una tarjeta: en una cuenta corriente el saldo es
         // el de su columna, y un cupo no dice nada de la plata que hay.
         val account = accounts.get(accountId)
-        val card = summary?.takeIf { account?.kind == AccountKind.CREDIT && !it.isEmpty }
+        val isCard = account?.kind == AccountKind.CREDIT
+        val card = summary?.takeIf { isCard && !it.isEmpty }
         // El resumen de una tarjeta en una cuenta que no es tarjeta: el archivo lo traía, así que se
         // dice en el reporte en vez de callarlo (una cuenta corriente no tiene cupo ni facturación).
         val ignoredSummary = summary
@@ -202,9 +258,13 @@ class StatementImportRepository(
         var repeated = 0
         var pending = 0
         var completed = 0
-        var payments = 0
+        var paymentRows = 0
+        var transferRows = 0
+        var linked = 0
         val claimed = mutableSetOf<Long>()
         val pools = mutableMapOf<PoolKey, List<TransactionEntity>>()
+        /** Traspasos que dejó esta importación, para buscarles la otra pata al final. */
+        val legs = mutableListOf<Long>()
 
         // En orden: la fila más vieja se queda con el movimiento más viejo. Si el archivo viniera
         // al revés, la de hoy podría reclamar el aviso de ayer y dejar a la de ayer sin pareja.
@@ -214,7 +274,15 @@ class StatementImportRepository(
             // de otra cuenta»—, así mueve el saldo y no suma en gastos ni en ingresos. Sin esto,
             // pagar la tarjeta aparecía como ingreso del mes y el gasto original seguía contado: el
             // mes decía que se había ganado plata que sólo cambió de lugar.
-            val payment = card != null && row.isPayment
+            //
+            // Lo que decide es el tipo de cuenta, no el archivo: el abono de una cartola de tarjeta
+            // es el pago aunque venga en un Excel o un CSV sin resumen (el Excel de Santander no
+            // imprime cupo), y el de una cuenta corriente sigue siendo un depósito.
+            val payment = isCard && row.isPayment
+            // Y lo que la cartola escribe como «Traspaso Internet…» es la misma mecánica en
+            // cualquier cuenta: plata que cambia de bolsillo propio. La palabra la puso el banco, no
+            // se adivina (Fase 9.6).
+            val transfer = payment || row.isTransfer
             val at = Dates.startOfDay(row.date)
             val key = PoolKey(at, row.amount, row.direction)
             val pool = pools.getOrPut(key) {
@@ -224,17 +292,22 @@ class StatementImportRepository(
             if (existing != null) {
                 claimed += existing.id
                 repeated++
-                val filled = complete(existing, row, payment)
+                val filled = complete(existing, row, transfer)
                 if (filled != null) {
                     transactions.save(filled)
-                    // Un pago que se corrige no es un comercio que se completa: el reporte los
-                    // cuenta aparte para poder decir que esa plata no era un ingreso.
-                    if (payment && !existing.isTransfer) payments++ else completed++
+                    if (transfer && !existing.isTransfer) {
+                        // Un pago que se corrige no es un comercio que se completa: el reporte los
+                        // cuenta aparte para poder decir que esa plata no era un ingreso.
+                        if (payment) paymentRows++ else transferRows++
+                        if (filled.transferAccountId == null) legs += filled.id
+                    } else {
+                        completed++
+                    }
                 }
                 continue
             }
             val known = row.merchant.isNotEmpty() && !MerchantQuality.isGeneric(row.merchant)
-            transactions.save(
+            val newId = transactions.save(
                 TransactionEntity(
                     accountId = accountId,
                     occurredAt = at,
@@ -242,7 +315,7 @@ class StatementImportRepository(
                     direction = row.direction,
                     merchantRaw = row.merchant,
                     merchantNorm = row.merchant.lowercase(),
-                    categoryId = if (payment) {
+                    categoryId = if (transfer) {
                         null
                     } else {
                         CategoryPick.resolve(
@@ -255,10 +328,11 @@ class StatementImportRepository(
                         )
                     },
                     status = if (known) TransactionStatus.CONFIRMED else TransactionStatus.PENDING,
-                    isExpense = row.direction == Direction.DEBIT && !payment,
-                    // Traspaso con una sola pata: la cuenta de la que salió el pago no está en este
-                    // archivo, y `transferAccountId` queda en `null` hasta que alguien la diga.
-                    isTransfer = payment,
+                    isExpense = row.direction == Direction.DEBIT && !transfer,
+                    // Traspaso con una sola pata: la cuenta de la que salió (o a la que llegó) no
+                    // está en este archivo. `transferAccountId` queda en `null` y la búsqueda de la
+                    // otra pata, al final, lo completa si ya estaba anotada.
+                    isTransfer = transfer,
                     source = TransactionSource.CSV,
                     // Fase 9.3: la cuota y el precio de la compra, para saber cuánto falta pagar.
                     installmentNumber = row.installmentNumber,
@@ -269,8 +343,33 @@ class StatementImportRepository(
                 ),
             )
             added++
-            if (payment) payments++
+            if (payment) {
+                paymentRows++
+            } else if (transfer) {
+                transferRows++
+                legs += newId
+            }
             if (!known) pending++
+        }
+
+        // Las dos patas del mismo traspaso casi nunca vienen en el mismo archivo: el pago de la
+        // tarjeta sale de la cuenta corriente un día y entra a la tarjeta al siguiente, y el
+        // traspaso a la cuenta de ahorro se importa por separado. Cuando la otra pata ya está
+        // anotada —de esta cartola o de una importada antes—, las dos quedan apuntándose y la lista
+        // deja de mostrar dos movimientos sueltos que no cuadran con ningún banco.
+        for (legId in legs) {
+            val leg = transactions.get(legId) ?: continue
+            if (leg.transferAccountId != null) continue
+            val counterpart = transactions.findUnlinkedLeg(
+                amount = leg.amount,
+                direction = leg.direction.opposite(),
+                accountId = leg.accountId,
+                excludeId = leg.id,
+                at = leg.occurredAt,
+                windowMillis = PAIR_WINDOW,
+            ) ?: continue
+            transactions.linkTransfer(leg, counterpart)
+            linked++
         }
 
         var snapshotSaved = false
@@ -321,25 +420,39 @@ class StatementImportRepository(
             }
         }
 
-        // El resumen trae también el cupo y las fechas de facturación y de pago. Se guardan sólo si
-        // la cuenta no los tenía: lo que el usuario escribió en el diálogo manda.
+        // El resumen trae también el cupo y las fechas de facturación y de pago, y **manda sobre lo
+        // escrito a mano**: el cupo de la tarjeta lo dice el banco, y el número que se escribió en el
+        // diálogo fue una estimación que puede estar equivocada. Se corrige y el reporte cuenta de
+        // cuánto a cuánto, para que el cambio no pase inadvertido.
         var learnedLimit: Long? = null
         var learnedStatementDay: Int? = null
         var learnedPaymentDay: Int? = null
+        var limitBefore: Long? = null
+        var statementDayBefore: Int? = null
+        var paymentDayBefore: Int? = null
         if (card != null && account != null) {
             val limit = card.limit?.takeIf { it > 0 }
             val statementDay = card.asOf?.dayOfMonth
             val paymentDay = card.due?.dayOfMonth
             val updated = account.copy(
-                creditLimit = account.creditLimit ?: limit,
-                statementDay = account.statementDay ?: statementDay,
-                paymentDay = account.paymentDay ?: paymentDay,
+                creditLimit = limit ?: account.creditLimit,
+                statementDay = statementDay ?: account.statementDay,
+                paymentDay = paymentDay ?: account.paymentDay,
             )
             if (updated != account) {
                 accounts.update(updated)
-                if (account.creditLimit == null) learnedLimit = limit
-                if (account.statementDay == null) learnedStatementDay = statementDay
-                if (account.paymentDay == null) learnedPaymentDay = paymentDay
+                if (limit != null && limit != account.creditLimit) {
+                    learnedLimit = limit
+                    limitBefore = account.creditLimit
+                }
+                if (statementDay != null && statementDay != account.statementDay) {
+                    learnedStatementDay = statementDay
+                    statementDayBefore = account.statementDay
+                }
+                if (paymentDay != null && paymentDay != account.paymentDay) {
+                    learnedPaymentDay = paymentDay
+                    paymentDayBefore = account.paymentDay
+                }
             }
         }
 
@@ -352,11 +465,16 @@ class StatementImportRepository(
             balanceDate = balanceDate,
             snapshotSaved = snapshotSaved,
             skipped = sheet.skipped,
-            payments = payments,
+            payments = paymentRows,
+            transfers = transferRows,
+            linked = linked,
             balanceFromSummary = balanceFromSummary,
             learnedLimit = learnedLimit,
             learnedStatementDay = learnedStatementDay,
             learnedPaymentDay = learnedPaymentDay,
+            limitBefore = limitBefore,
+            statementDayBefore = statementDayBefore,
+            paymentDayBefore = paymentDayBefore,
             ignoredSummary = ignoredSummary,
         )
     }
@@ -368,20 +486,22 @@ class StatementImportRepository(
      *
      * El segundo arreglo no es del comercio sino de la plata: un pago de la tarjeta que quedó
      * anotado como ingreso —lo escribió el aviso del banco, o una importación de antes de la Fase
-     * 9.6— se convierte en traspaso aunque no haya nada más que completar. Reimportar el estado de
-     * cuenta es justamente el momento de corregirlo: esa plata no se ganó, cambió de lugar.
+     * 9.6— se convierte en traspaso aunque no haya nada más que completar. Lo mismo vale para las
+     * filas que el banco escribe como «Traspaso Internet…» y que una importación anterior anotó como
+     * gasto o como ingreso (Fase 9.6): reimportar la cartola es justamente el momento de corregirlo,
+     * esa plata no se gastó ni se ganó, cambió de cuenta.
      */
     private suspend fun complete(
         existing: TransactionEntity,
         row: StatementImport.Row,
-        payment: Boolean,
+        transfer: Boolean,
     ): TransactionEntity? {
         if (existing.isTransfer) return null
-        // Un pago se corrige siempre —arriba ya se vio que este movimiento no es traspaso—; el
+        // Un traspaso se corrige siempre —arriba ya se vio que este movimiento no lo es—; el
         // comercio, sólo si al movimiento le faltaba uno.
         val merchant = row.merchant.takeIf { it.isNotEmpty() && !MerchantQuality.isGeneric(it) }
         val learned = merchant?.takeIf { MerchantQuality.isGeneric(existing.merchantRaw) }
-        if (!payment && learned == null) return null
+        if (!transfer && learned == null) return null
         return existing.copy(
             merchantRaw = learned ?: existing.merchantRaw,
             merchantNorm = learned?.lowercase() ?: existing.merchantNorm,
@@ -389,9 +509,9 @@ class StatementImportRepository(
             installmentNumber = row.installmentNumber ?: existing.installmentNumber,
             installmentTotal = row.installmentTotal ?: existing.installmentTotal,
             originAmount = row.originAmount ?: existing.originAmount,
-            // El pago de la tarjeta queda como traspaso y sin categoría: lo que dice la cartola es
-            // que esa plata entró a la tarjeta, no que fuera un gasto ni un ingreso.
-            categoryId = if (payment) {
+            // Un traspaso queda sin categoría: lo que dice la cartola es que esa plata cambió de
+            // cuenta, no que fuera un gasto ni un ingreso.
+            categoryId = if (transfer) {
                 null
             } else {
                 existing.categoryId ?: CategoryPick.resolve(
@@ -402,8 +522,8 @@ class StatementImportRepository(
                     rawText = row.rawText,
                 )
             },
-            isTransfer = payment,
-            isExpense = existing.isExpense && !payment,
+            isTransfer = transfer,
+            isExpense = existing.isExpense && !transfer,
             // Lo que no se aprendió se deja como estaba: un pago que sólo se convierte en traspaso
             // no gana un comercio que el banco no escribió, ni borra la nota de que falta.
             status = if (learned != null) TransactionStatus.CONFIRMED else existing.status,
@@ -468,5 +588,13 @@ class StatementImportRepository(
         const val CARTOLA_WINDOW = 36 * 60 * 60_000L
 
         const val MISSING_MERCHANT = "La cartola no traía el comercio. Revisa y confirma."
+
+        /**
+         * Cuántos días de diferencia se toleran entre las dos patas de un traspaso. No es la misma
+         * ventana que [CARTOLA_WINDOW]: acá las dos filas vienen de archivos distintos —o de un mismo
+         * archivo con el pago de la tarjeta un día después— y lo que se busca es la misma plata
+         * entrando en otra cuenta, no el mismo gasto escrito dos veces.
+         */
+        const val PAIR_WINDOW = 3 * 24 * 60 * 60_000L
     }
 }

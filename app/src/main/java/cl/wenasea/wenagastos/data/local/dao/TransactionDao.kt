@@ -128,6 +128,32 @@ interface TransactionDao {
     ): TransactionEntity?
 
     /**
+     * La otra pata de un traspaso que **todavía no está enlazada**: mismo monto, sentido contrario,
+     * en otra cuenta, y las dos son traspasos sin pareja. La importación de cartolas la usa al
+     * anotar una pata; las dos llegan en archivos distintos y con días de diferencia, así que la
+     * pareja se busca en la base y gana la más cercana en el tiempo.
+     */
+    @Query(
+        """
+        SELECT * FROM transactions
+        WHERE amount = :amount AND direction = :direction AND accountId != :accountId
+          AND id != :excludeId AND isTransfer = 1 AND transferAccountId IS NULL
+          AND occurredAt BETWEEN :from AND :to
+        ORDER BY ABS(occurredAt - :at) ASC, id ASC
+        LIMIT 1
+        """,
+    )
+    suspend fun findUnlinkedLeg(
+        amount: Long,
+        direction: String,
+        accountId: Long,
+        excludeId: Long,
+        at: Long,
+        from: Long,
+        to: Long,
+    ): TransactionEntity?
+
+    /**
      * Traspasos cuyas dos patas caen en estas dos cuentas: al unirlas dejan de tener sentido,
      * porque ya no hay plata que vaya de una a la otra.
      */

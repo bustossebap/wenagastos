@@ -162,7 +162,10 @@ object Pdf {
             debt = value(label("cupo utilizado")),
             billed = value(label("monto total facturado a pagar")) ?: value(label("total a pagar")),
             limit = value(label("cupo total")),
-            asOf = date(label("fecha facturacion")),
+            // La fecha a la que corresponden esas cifras. La CMR la titula «Fecha Facturación» y
+            // Santander, «Fecha Estado de Cuenta»: sin la segunda, el corte de la tarjeta quedaba
+            // fechado en su última fila del detalle y el día de facturación no se aprendía.
+            asOf = date(label("fecha facturacion")) ?: date(label("fecha estado de cuenta")),
             due = date(label("pagar hasta")),
         )
         return found.takeUnless { it.isEmpty }

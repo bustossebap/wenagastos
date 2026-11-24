@@ -228,6 +228,28 @@ class FakeTransactionDao : TransactionDao {
                 it.accountId != accountId && it.id != excludeId && it.occurredAt in from..to
         }
         .minWithOrNull(compareBy<TransactionEntity> { it.occurredAt }.thenBy { it.id })
+
+    /**
+     * Espeja `isTransfer = 1 AND transferAccountId IS NULL` con
+     * `ORDER BY ABS(occurredAt - :at) ASC, id ASC LIMIT 1`: la pata más cercana en el tiempo.
+     */
+    override suspend fun findUnlinkedLeg(
+        amount: Long,
+        direction: String,
+        accountId: Long,
+        excludeId: Long,
+        at: Long,
+        from: Long,
+        to: Long,
+    ): TransactionEntity? = rows.values
+        .filter {
+            it.amount == amount && it.direction.name == direction &&
+                it.accountId != accountId && it.id != excludeId &&
+                it.isTransfer && it.transferAccountId == null && it.occurredAt in from..to
+        }
+        .minWithOrNull(
+            compareBy<TransactionEntity> { kotlin.math.abs(it.occurredAt - at) }.thenBy { it.id },
+        )
 }
 
 class FakeAccountDao : AccountDao {

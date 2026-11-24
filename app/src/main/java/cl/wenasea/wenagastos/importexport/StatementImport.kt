@@ -42,11 +42,26 @@ object StatementImport {
         val rawText: String,
         /**
          * `true` cuando el banco marcó la fila como **pago de la tarjeta**: escribe el monto en
-         * positivo y el signo en otra columna de la misma fila. En una tarjeta eso no es un
-         * ingreso: es plata que entra para bajar la deuda (Fase 9.6), y quien la anota como ingreso
-         * infla el mes con plata que ya se había gastado.
+         * positivo y el signo en otra columna de la misma fila (o en la columna de abono). En una
+         * tarjeta eso no es un ingreso: es plata que entra para bajar la deuda (Fase 9.6), y quien la
+         * anota como ingreso infla el mes con plata que ya se había gastado.
+         *
+         * El lector no conoce la cuenta, así que marca el abono y no decide: en una cuenta corriente
+         * ese mismo abono es un depósito. Quien separa los dos casos es el repositorio.
          */
         val isPayment: Boolean = false,
+        /**
+         * `true` cuando el banco dice que esta plata **cambió de cuenta propia**, o que va a pagar
+         * una tarjeta: escribe «Traspaso Internet de Cta.Cte.», «Traspaso Internet a T. Crédito»,
+         * «Traspaso Internet de Cuenta Vista» o «Transf para Pago Tarjeta CMR» en la descripción.
+         * Eso no es un gasto ni un ingreso, y en una cuenta corriente tampoco es el abono de una
+         * tarjeta: es la misma plata moviéndose, y el mes se infla si entra como cualquiera de los
+         * dos (Fase 9.6).
+         *
+         * Una transferencia a un nombre —aunque sea el del dueño de la cuenta— no se marca: puede
+         * ser un tercero, y adivinar ahí convierte un gasto real en un traspaso.
+         */
+        val isTransfer: Boolean = false,
     )
 
     /** Lo que se pudo leer de un archivo. */
@@ -310,6 +325,11 @@ object StatementImport {
      * monto tampoco (las columnas de cargo y abono vienen vacías en la mitad de las filas).
      */
     private fun parseRow(line: List<String>, columns: Columns): Row? {
+        val merchant = describe(columns.text(line, columns.merchant))
+        // El saldo con el que abre el período y los totales del pie traen fecha y monto, pero no son
+        // movimientos: el primero es la deuda de la factura anterior —anotarlo duplicaba la deuda de
+        // la tarjeta— y los otros suman las filas que ya están arriba.
+        if (NOT_A_MOVEMENT.matches(TextNorm.plain(merchant))) return null
         val date = StatementDates.parse(columns.text(line, columns.date)) ?: return null
         // La cuota de la compra: `05/06` en Santander, cuántas faltan en Falabella. No es plata y
         // hay que leerla antes que los montos.
@@ -347,6 +367,11 @@ object StatementImport {
                 into != 0L && out == 0L -> {
                     direction = Direction.CREDIT
                     amount = abs(into)
+                    // El abono de una cartola de tarjeta es el pago: la plata entra a la tarjeta para
+                    // bajar la deuda. Acá no se sabe de qué cuenta se trata —una cuenta corriente usa
+                    // la misma columna para un depósito—, así que sólo se marca y el repositorio
+                    // decide si es un traspaso mirando el tipo de cuenta.
+                    payment = true
                 }
 
                 // Con las dos columnas llenas, o con ninguna, la fila no es un movimiento.
@@ -380,7 +405,7 @@ object StatementImport {
             date = date,
             amount = amount,
             direction = direction,
-            merchant = describe(columns.text(line, columns.merchant)),
+            merchant = merchant,
             balance = balance,
             installmentNumber = cuota?.first,
             installmentTotal = cuota?.second,
@@ -388,7 +413,30 @@ object StatementImport {
             originAmount = origin?.let(::abs)?.takeIf { cuota != null && it >= amount },
             rawText = line.joinToString(" · ") { it.trim() }.take(MAX_RAW_TEXT),
             isPayment = payment,
+            // La descripción del banco también dice si la plata salió de una cuenta propia: eso no
+            // depende de qué cuenta sea, así que se marca acá y el repositorio lo usa tal cual.
+            isTransfer = isOwnMove(merchant),
         )
+    }
+
+    /**
+     * `true` cuando la descripción dice que la plata se movió entre cuentas del mismo dueño, o que
+     * fue a pagar una tarjeta.
+     *
+     * En Chile el banco lo escribe con la palabra **traspaso** —«Traspaso Internet de Cta.Cte.»,
+     * «Traspaso Internet a T. Crédito», «Traspaso Internet de Cuenta Vista»—, y una transferencia a
+     * un tercero se escribe con el nombre del que la recibe («TRANSF A GASTON MENESES»). Por eso la
+     * palabra sola alcanza y el nombre propio descarta.
+     *
+     * El pago de la tarjeta desde la cuenta con la que se paga tiene su propia redacción, y no dice
+     * «traspaso»: Falabella escribe **«Transf para Pago Tarjeta CMR»** y Santander «Pago T. Crédito».
+     * Si esa fila entra como gasto, el mes cuenta dos veces la misma compra —la del estado de cuenta
+     * y la del pago—. Se piden las dos palabras juntas a propósito: «Mercado Pago» es un comercio.
+     */
+    private fun isOwnMove(merchant: String): Boolean {
+        if (merchant.isEmpty()) return false
+        val text = TextNorm.plain(merchant)
+        return OWN_MOVE.containsMatchIn(text) || CARD_PAYMENT.containsMatchIn(text)
     }
 
     /** El comercio sin los espacios de relleno que mete la planilla. */
@@ -492,6 +540,10 @@ object StatementImport {
             "dd.MM.yyyy",
             "dd/MM/yy",
             "dd-MM-yy",
+            // Sin el cero adelante: la planilla de la tarjeta escribe `11/7/2026`. El formato
+            // estricto de arriba no lo acepta (julio no es `07`) y la fila se caía.
+            "d/M/yyyy",
+            "d-M-yyyy",
         )
 
         /** Un año fuera de este rango es una columna mal mapeada, no una cartola vieja. */
@@ -532,10 +584,13 @@ object StatementImport {
             if (raw.isEmpty()) return null
             // Una cuota ("05/06") o una fecha también son puros dígitos, y no son plata.
             if (raw.contains('/')) return null
-            val negative = raw.startsWith("-") || (raw.startsWith("(") && raw.endsWith(")"))
-            val positive = raw.startsWith("+")
+            // El signo puede venir después del símbolo de peso: la planilla de la tarjeta escribe
+            // `$-3.380`, y sin sacar el `$` ese monto se leía en positivo.
+            val body = raw.removePrefix("$").trim()
+            val negative = body.startsWith("-") || (body.startsWith("(") && body.endsWith(")"))
+            val positive = body.startsWith("+")
 
-            var whole = raw
+            var whole = body
             val comma = whole.lastIndexOf(',')
             if (comma >= 0 && whole.length - comma - 1 in 1..2) whole = whole.substring(0, comma)
 
@@ -552,4 +607,27 @@ object StatementImport {
 
     /** Un monto tal como lo escribe el banco: `$ 30.600`, `-775.655`, `(500)`. Sin letras ni barras. */
     private val MONEY = Regex("""^\(?[\s$]*[+-]?[\s$]*\d[\d.,]*\)?$""")
+
+    /**
+     * Renglones de resumen que traen fecha y monto pero no son movimientos: el saldo con el que abre
+     * el período y los totales del pie. Se comparan con el texto ya normalizado, así `Saldo Inicial`
+     * y `SALDO INICIAL` son lo mismo.
+     */
+    private val NOT_A_MOVEMENT = Regex(
+        """^(saldo (inicial|anterior|final|disponible)\b.*|totales?|subtotales?)$""",
+    )
+
+    /**
+     * La palabra con que el banco dice que la plata cambió de cuenta propia. Se busca dentro de la
+     * descripción y no al principio: «Traspaso Internet a T. Crédito» empieza igual que «Traspaso
+     * Internet de Cta.Cte.», y las dos son la misma plata moviéndose.
+     */
+    private val OWN_MOVE = Regex("""\btraspaso\b""")
+
+    /**
+     * El pago de la tarjeta escrito en la cartola de la cuenta que lo paga: «Transf para Pago
+     * Tarjeta CMR», «Pago T. Crédito», «Pago tarjeta de crédito». Las dos palabras juntas —la de
+     * pagar y la de la tarjeta— porque «Mercado Pago» es un comercio y no una transferencia.
+     */
+    private val CARD_PAYMENT = Regex("""\bpago\b.*\btarjeta\b|\bpago\b.*\bt\.?\s*credito\b""")
 }

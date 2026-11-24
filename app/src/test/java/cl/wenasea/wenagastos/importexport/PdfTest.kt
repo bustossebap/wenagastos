@@ -250,6 +250,19 @@ class PdfTest {
     }
 
     @Test
+    fun `el estado de cuenta de santander fecha el corte con la fecha del estado`() {
+        // Santander no titula «Fecha Facturación»: escribe «Fecha Estado de Cuenta» al lado de la
+        // fecha. Sin leerla, el corte de la tarjeta quedaba fechado en su última fila del detalle y
+        // el día de facturación no se aprendía.
+        val file = Pdf.statement(estadoDeCuenta(withSummary = true, santander = true))!!
+
+        val summary = file.summary!!
+        assertEquals("2026-11-04", summary.asOf.toString())
+        assertEquals(1_500_000L, summary.limit)
+        assertEquals(700_000L, summary.debt)
+    }
+
+    @Test
     fun `una cartola de cuenta corriente no trae resumen`() {
         // El saldo de una cuenta viene en su columna; no hay cupo que leer y no se inventa.
         val file = Pdf.statement(cartola())!!
@@ -381,12 +394,18 @@ class PdfTest {
     private fun estadoDeCuenta(
         rows: List<List<String>> = ESTADO_ROWS,
         withSummary: Boolean = false,
+        /** Santander titula la fecha del corte «Fecha Estado de Cuenta», no «Fecha Facturación». */
+        santander: Boolean = false,
     ): ByteArray {
         val page = Page()
         page.text(36.67, 780.0, "ESTADO DE CUENTA")
         if (withSummary) {
             // El cupón de pago: la etiqueta a la izquierda y el valor en la misma línea, a la derecha.
-            page.text(38.67, 684.4, "Fecha Facturación Estado de Cuenta:")
+            page.text(
+                38.67,
+                684.4,
+                if (santander) "Fecha Estado de Cuenta" else "Fecha Facturación Estado de Cuenta:",
+            )
             page.text(182.61, 684.4, "04/11/2026")
             page.text(109.26, 628.74, "• Pagar Hasta")
             page.text(273.96, 628.74, "20/11/2026")

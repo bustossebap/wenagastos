@@ -281,6 +281,31 @@ class TransactionRepository(private val dao: TransactionDao) {
     )
 
     /**
+     * La otra pata de un traspaso que todavía no está enlazada, en cualquier otra cuenta.
+     *
+     * La importación de cartolas la usa con una ventana de días: el pago de la tarjeta sale de la
+     * cuenta corriente un día y llega a la tarjeta al siguiente, y las dos patas viajan en archivos
+     * distintos. Gana la más cercana en el tiempo —dos traspasos del mismo monto en la misma semana
+     * son posibles— y sólo se enlaza una vez: la pata que ya tiene pareja no se toca.
+     */
+    suspend fun findUnlinkedLeg(
+        amount: Long,
+        direction: Direction,
+        accountId: Long,
+        excludeId: Long,
+        at: Long,
+        windowMillis: Long = LEG_WINDOW,
+    ): TransactionEntity? = dao.findUnlinkedLeg(
+        amount,
+        direction.name,
+        accountId,
+        excludeId,
+        at,
+        at - windowMillis,
+        at + windowMillis,
+    )
+
+    /**
      * Deja las dos patas de un traspaso apuntándose entre sí, con un `transferGroupId` común.
      * Una pata ya guardada conserva su vínculo si no hay nada que corregir.
      */
@@ -300,6 +325,14 @@ class TransactionRepository(private val dao: TransactionDao) {
     private companion object {
         /** Las dos patas de un traspaso pueden llegar con minutos de diferencia entre bancos. */
         const val COUNTERPART_WINDOW = 6 * 60 * 60_000L
+
+        /**
+         * Las dos patas de un traspaso que vienen de cartolas distintas no caen el mismo día: lo que
+         * se transfiere el viernes llega el lunes, y el pago de una tarjeta sale de la cuenta
+         * corriente un día y aparece en el estado de cuenta al siguiente. Tres días cubren el fin de
+         * semana chileno y no alcanzan al traspaso del mes pasado, que ya está enlazado o no lo está.
+         */
+        const val LEG_WINDOW = 3 * 24 * 60 * 60_000L
     }
 }
 
