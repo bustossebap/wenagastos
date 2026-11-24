@@ -176,6 +176,29 @@ object Reports {
         .filter { it.budget != null && it.budget!!.level != BudgetLevel.OK }
         .sortedByDescending { it.budget?.fraction ?: 0f }
 
+    /** Suma de los gastos fijos del mes: cuotas de tarjeta, suscripciones y compromisos
+     * periódicos que se repetirían si el mes tuviera la misma cantidad de días. */
+    fun fixedExpenses(transactions: List<TransactionEntity>): Long =
+        counted(transactions)
+            .filter { it.direction == Direction.DEBIT }
+            .filter { it.installmentTotal != null }
+            .sumOf { it.amount }
+
+    /** Suma de los gastos variables del mes: débitos confirmados que no son cuotas ni
+     * traspasos, es decir, gastos sueltos e impredecibles. */
+    fun variableExpenses(transactions: List<TransactionEntity>): Long =
+        counted(transactions)
+            .filter { it.direction == Direction.DEBIT }
+            .filter { it.installmentTotal == null }
+            .filter { !it.isTransfer }
+            .sumOf { it.amount }
+
+    /** Suma de los ahorros del mes: transferencias entre cuentas propias. */
+    fun savings(transactions: List<TransactionEntity>): Long =
+        counted(transactions)
+            .filter { it.isTransfer }
+            .sumOf { it.amount }
+
     /** Suma de los presupuestos de las categorías de gasto activas. */
     fun totalBudget(categories: List<CategoryEntity>): Long = categories
         .filter { it.kind == CategoryKind.EXPENSE && !it.isArchived }

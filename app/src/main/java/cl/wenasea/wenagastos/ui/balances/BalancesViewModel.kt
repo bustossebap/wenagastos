@@ -24,6 +24,12 @@ data class BalancesUiState(
     val institutions: List<InstitutionBalance> = emptyList(),
     /** Gasto del mes en curso por cuenta: lo que se lleva la tarjeta de cada cuenta. */
     val monthSpend: Map<Long, Long> = emptyMap(),
+    /** Cuotas fijas del mes por cuenta: tarjetas, suscripciones. */
+    val monthFixed: Map<Long, Long> = emptyMap(),
+    /** Gastos variables del mes por cuenta: débitos sueltos e impredecibles. */
+    val monthVariable: Map<Long, Long> = emptyMap(),
+    /** Ahorros del mes por cuenta: transferencias entre cuentas propias. */
+    val monthSavings: Map<Long, Long> = emptyMap(),
     /** Cupo, ciclo y compras del ciclo de cada tarjeta de crédito, por id de cuenta. */
     val credit: Map<Long, CreditUsage> = emptyMap(),
     val loaded: Boolean = false,
@@ -64,6 +70,15 @@ data class BalancesUiState(
 
     /** Cuántas tarjetas aportan al cupo disponible; el resto no tiene cupo o deuda escrita. */
     val creditKnown: Int get() = cards.count { credit[it.account.id]?.available != null }
+
+    /** Suma de gastos fijos por cuenta. */
+    val totalFixed: Long get() = cash.sumOf { row -> monthFixed[row.account.id] ?: 0L }
+
+    /** Suma de gastos variables por cuenta. */
+    val totalVariable: Long get() = cash.sumOf { row -> monthVariable[row.account.id] ?: 0L }
+
+    /** Suma de ahorros (transferencias) por cuenta. */
+    val totalSavings: Long get() = cash.sumOf { row -> monthSavings[row.account.id] ?: 0L }
 }
 
 /**
@@ -94,25 +109,38 @@ class BalancesViewModel(
     private val cycleFrom = Dates.monthStart(month.minusMonths(1))
 
     val state: StateFlow<BalancesUiState> = combine(
-        accounts.observeActive(),
-        snapshots.observeAll(),
-        transactions.observeSinceSnapshotCutoffs(),
-        transactions.observeBetween(Dates.monthStart(month), Dates.monthEndExclusive(month)),
-        transactions.observeBetween(cycleFrom, Long.MAX_VALUE),
-    ) { active, cuts, afterCutoff, monthTransactions, cycleTransactions ->
-        val institutions = Balances.institutions(active, cuts, afterCutoff)
-        BalancesUiState(
-            institutions = institutions,
-            monthSpend = Balances.monthSpendByAccount(monthTransactions, active),
-            credit = institutions
-                .flatMap { it.accounts }
-                .filter { it.account.kind == AccountKind.CREDIT }
-                .associate { row ->
-                    row.account.id to Credit.usage(row.account, row.balance, cycleTransactions)
-                },
-            loaded = true,
-        )
-    }.stateIn(
+    accounts.observeActive(),
+    snapshots.observeAll(),
+    transactions.observeSinceSnapshotCutoffs(),
+    transactions.observeBetween(Dates.monthStart(month), Dates.monthEndExclusive(month)),
+    transactions.observeBetween(cycleFrom, Long.MAX_VALUE),
+) { active, cuts, afterCutoff, monthTransactions, cycleTransactions ->
+    val institutions = Balances.institutions(active, cuts, afterCutoff)
+    val monthSpend = Balances.monthSpendByAccount(monthTransactions, active)
+    // Tres cortes del mismo mes. No se reusa `monthSpendByAccount` con un filtro encima: ese
+    // criterio descarta los traspasos, así que los ahorros salían siempre en cero.
+    val monthFixed = active.associate {
+        it.id to Balances.fixedExpensesByAccount(monthTransactions, it.id)
+    }
+    val monthVariable = active.associate {
+        it.id to Balances.variableExpensesByAccount(monthTransactions, it.id)
+    }
+    val monthSavings = active.associate {
+        it.id to Balances.savingsByAccount(monthTransactions, it.id)
+    }
+    BalancesUiState(
+        institutions = institutions,
+        monthSpend = monthSpend,
+        monthFixed = monthFixed,
+        monthVariable = monthVariable,
+        monthSavings = monthSavings,
+        credit = institutions
+            .flatMap { it.accounts }
+            .filter { it.account.kind == AccountKind.CREDIT }
+            .associate { row -> row.account.id to Credit.usage(row.account, row.balance, cycleTransactions) },
+        loaded = true,
+    )
+}.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = BalancesUiState(),

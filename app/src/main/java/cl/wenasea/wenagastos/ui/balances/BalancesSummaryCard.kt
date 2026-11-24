@@ -73,6 +73,29 @@ fun BalancesSummaryCard(
                         fontWeight = FontWeight.Bold,
                     )
                 }
+                // Fixed / Variable / Savings breakdown
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 12.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val fixedTotal = state.monthFixed.values.sum()
+                    val variableTotal = state.monthVariable.values.sum()
+                    val savingsTotal = state.monthSavings.values.sum()
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Fijos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = Money.format(fixedTotal), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Variables", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = Money.format(variableTotal), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Ahorros", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = Money.format(savingsTotal), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                    }
+                }
             } else {
                 Text(
                     text = "Todavía no sabes cuánto tienes. En el detalle puedes escribir el " +

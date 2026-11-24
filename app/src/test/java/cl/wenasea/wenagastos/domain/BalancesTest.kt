@@ -67,6 +67,7 @@ class BalancesTest {
         status: TransactionStatus = TransactionStatus.CONFIRMED,
         isTransfer: Boolean = false,
         transferAccountId: Long? = null,
+        installmentTotal: Int? = null,
     ) = TransactionEntity(
         id = id,
         accountId = accountId,
@@ -78,6 +79,7 @@ class BalancesTest {
         status = status,
         isTransfer = isTransfer,
         transferAccountId = transferAccountId,
+        installmentTotal = installmentTotal,
     )
 
     @Test
@@ -223,6 +225,25 @@ class BalancesTest {
 
         assertEquals(15_000L, byAccount[1])
         assertEquals(4_500L, byAccount[2])
+    }
+
+    @Test
+    fun `el desglose del mes separa fijos, variables y ahorros por cuenta`() {
+        val movements = listOf(
+            movement(id = 1, accountId = 1, amount = 20_000L, at = 2_000L, installmentTotal = 3),
+            movement(id = 2, accountId = 1, amount = 8_000L, at = 2_100L),
+            movement(id = 3, accountId = 1, amount = 5_000L, at = 2_200L, direction = Direction.CREDIT),
+            movement(id = 4, accountId = 1, amount = 50_000L, at = 2_300L, isTransfer = true, transferAccountId = 2),
+            movement(id = 5, accountId = 2, amount = 50_000L, at = 2_300L, direction = Direction.CREDIT, isTransfer = true, transferAccountId = 1),
+            movement(id = 6, accountId = 1, amount = 9_000L, at = 2_400L, isTransfer = true, status = TransactionStatus.PENDING),
+        )
+
+        assertEquals(20_000L, Balances.fixedExpensesByAccount(movements, 1))
+        assertEquals(8_000L, Balances.variableExpensesByAccount(movements, 1))
+        // El ahorro es la pata que sale: el traspaso cuenta una vez, la pata que entra en la otra
+        // cuenta no suma y el que todavía está Por revisar tampoco.
+        assertEquals(50_000L, Balances.savingsByAccount(movements, 1))
+        assertEquals(0L, Balances.savingsByAccount(movements, 2))
     }
 
     @Test

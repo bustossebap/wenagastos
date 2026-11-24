@@ -130,4 +130,40 @@ object Balances {
         transactions: List<TransactionEntity>,
         accounts: List<AccountEntity>,
     ): Map<Long, Long> = accounts.associate { it.id to monthSpend(transactions, it.id) }
+
+    /**
+     * Gasto fijo del mes por cuenta: las cuotas de tarjeta.
+     *
+     * Hoy «fijo» es la cuota, que es lo que se repite solo. La naturaleza FIJO de la categoría
+     * (Fase 9.5) todavía no entra en este corte: estas funciones no reciben las categorías.
+     */
+    fun fixedExpensesByAccount(transactions: List<TransactionEntity>, accountId: Long): Long =
+        transactions
+            .filter { it.accountId == accountId && it.status == TransactionStatus.CONFIRMED }
+            .filter { it.direction == Direction.DEBIT }
+            .filter { it.installmentTotal != null }
+            .sumOf { it.amount }
+
+    /** Gasto variable del mes por cuenta: débitos sueltos, ni cuota ni traspaso. */
+    fun variableExpensesByAccount(transactions: List<TransactionEntity>, accountId: Long): Long =
+        transactions
+            .filter { it.accountId == accountId && it.status == TransactionStatus.CONFIRMED }
+            .filter { it.direction == Direction.DEBIT }
+            .filter { it.installmentTotal == null }
+            .filter { !it.isTransfer }
+            .sumOf { it.amount }
+
+    /**
+     * Ahorro del mes por cuenta: la pata que **sale** de un traspaso a otra cuenta propia.
+     *
+     * Sólo el débito: el traspaso tiene dos patas y sumar las dos diría el doble de lo que se
+     * movió. Limitación conocida: el pago de la tarjeta también es un traspaso y hoy cae acá,
+     * porque separarlo pide mirar el tipo de la cuenta de destino.
+     */
+    fun savingsByAccount(transactions: List<TransactionEntity>, accountId: Long): Long =
+        transactions
+            .filter { it.accountId == accountId && it.status == TransactionStatus.CONFIRMED }
+            .filter { it.direction == Direction.DEBIT }
+            .filter { it.isTransfer }
+            .sumOf { it.amount }
 }
